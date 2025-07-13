@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timezone
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from plexapi.server import PlexServer
 from plexapi.myplex import MyPlexAccount
@@ -27,12 +27,16 @@ class PlexService:
                     if plex_movie.isWatched:
                         status = WatchStatus.WATCHED
                         watch_date = self._get_last_watched_date(plex_movie)
+                        progress_date = None
                     elif plex_movie.viewOffset > 0:
                         status = WatchStatus.IN_PROGRESS
                         watch_date = None
+                        # For IN_PROGRESS, use lastViewedAt as the progress date
+                        progress_date = self._get_last_viewed_date(plex_movie)
                     else:
                         status = WatchStatus.NOT_WATCHED
                         watch_date = None
+                        progress_date = None
 
                     # Extract external IDs
                     imdb_id = None
@@ -63,12 +67,16 @@ class PlexService:
                             if file_path:
                                 break
 
+                    # Get actual added date from Plex
+                    added_date = self._get_added_date(plex_movie)
+
                     # Create movie object
                     movie = Movie(
                         title=plex_movie.title,
                         availability=Availability.PLEX,
                         watch_date=watch_date,
-                        added_date=self._get_added_date(plex_movie),
+                        progress_date=progress_date,
+                        added_date=added_date,
                         watch_status=status,
                         in_watchlist=False,  # Will be updated with watchlist data
                         file_size=file_size,
@@ -137,7 +145,9 @@ class PlexService:
                     movie = Movie(
                         title=title,
                         availability=Availability.PLEX,  # May be adjusted during merging
-                        added_date=datetime.now().replace(tzinfo=None),  # RSS doesn't have added date
+                        watch_date=None,
+                        progress_date=None,
+                        added_date=None,  # RSS doesn't provide added date
                         in_watchlist=True,
                         imdb_id=imdb_id,
                         tmdb_id=tmdb_id
@@ -176,7 +186,9 @@ class PlexService:
                     movie = Movie(
                         title=item.title,
                         availability=Availability.PLEX,  # May be adjusted during merging
-                        added_date=datetime.now().replace(tzinfo=None),  # Watchlist doesn't have added date
+                        watch_date=None,
+                        progress_date=None,
+                        added_date=None,  # Watchlist doesn't provide added date
                         in_watchlist=True,
                         imdb_id=imdb_id,
                         tmdb_id=tmdb_id
@@ -192,18 +204,28 @@ class PlexService:
             print(f"Error fetching watchlist: {str(e)}")
             return []
 
-    def _get_added_date(self, plex_movie) -> datetime:
+    def _get_added_date(self, plex_movie) -> Optional[datetime]:
         """Get the date when a movie was added to Plex"""
         try:
-            # Use timezone-naive datetime for consistency
-            return datetime.fromtimestamp(plex_movie.addedAt).replace(tzinfo=None)
+            if hasattr(plex_movie, 'addedAt') and plex_movie.addedAt:
+                # Use timezone-naive datetime for consistency
+                return datetime.fromtimestamp(plex_movie.addedAt).replace(tzinfo=None)
+            return None
         except (AttributeError, TypeError):
-            return datetime.now().replace(tzinfo=None)
+            return None
 
     def _get_last_watched_date(self, plex_movie) -> datetime:
-        """Get the date when a movie was last watched"""
+        """Get the date when a movie was last watched (for fully watched movies)"""
         try:
             # Use timezone-naive datetime for consistency
-            return datetime.fromtimestamp(plex_movie.lastViewedAt).replace(tzinfo=None)
+            return plex_movie.lastViewedAt.replace(tzinfo=None)
+        except (AttributeError, TypeError):
+            return None
+
+    def _get_last_viewed_date(self, plex_movie) -> Optional[datetime]:
+        """Get the date when a movie was last viewed (for in-progress movies)"""
+        try:
+            # Use timezone-naive datetime for consistency
+            return plex_movie.lastViewedAt.replace(tzinfo=None)
         except (AttributeError, TypeError):
             return None

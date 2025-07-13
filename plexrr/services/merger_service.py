@@ -25,7 +25,10 @@ def merge_movies(plex_movies: List[Movie], radarr_movies: List[Movie],
             if existing_movie.file_size is None and movie.file_size is not None:
                 existing_movie.file_size = movie.file_size
                 existing_movie.file_path = movie.file_path
-            # Keep other metadata from Plex (watch status, dates, etc)
+
+            # Use Radarr's added date if Plex doesn't have one
+            if existing_movie.added_date is None and movie.added_date is not None:
+                existing_movie.added_date = movie.added_date
         else:
             # Movie only exists in Radarr
             merged_movies[key] = movie
