@@ -19,8 +19,9 @@ class Movie:
     """Movie data model with information from both Plex and Radarr"""
     title: str
     availability: Availability
-    watch_date: Optional[datetime] = None
-    added_date: datetime = None
+    watch_date: Optional[datetime] = None  # For WATCHED movies
+    progress_date: Optional[datetime] = None  # For IN_PROGRESS movies
+    added_date: Optional[datetime] = None  # When added to Plex/Radarr
     watch_status: WatchStatus = WatchStatus.NOT_WATCHED
     in_watchlist: bool = False
     file_size: Optional[int] = None  # File size in bytes
@@ -56,10 +57,17 @@ class Movie:
 
     def get_formatted_date(self) -> str:
         """Return formatted date with relative time"""
-        # Choose watch date if available, otherwise use added date
-        date = self.watch_date or self.added_date
-
-        if date is None:
+        # Priority based on watch status
+        if self.watch_status == WatchStatus.WATCHED and self.watch_date:
+            date = self.watch_date
+            date_type = "watched"
+        elif self.watch_status == WatchStatus.IN_PROGRESS and self.progress_date:
+            date = self.progress_date
+            date_type = "in progress"
+        elif self.added_date:
+            date = self.added_date
+            date_type = "added"
+        else:
             return "Unknown"
 
         # Format as absolute date and relative time
@@ -76,4 +84,5 @@ class Movie:
 
         relative_time = humanize.naturaltime(now - date)
 
-        return f"{absolute_date} ({relative_time})"
+        # Show both date and whether it's a watch date or added date
+        return f"{absolute_date} [{date_type}] ({relative_time})"

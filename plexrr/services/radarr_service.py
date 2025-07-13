@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timezone
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import requests
 from dateutil import parser
@@ -51,10 +51,13 @@ class RadarrService:
                     elif file_path and os.path.exists(file_path):
                         file_size = os.path.getsize(file_path)
 
+
                 # Create movie object
                 movie = Movie(
                     title=radarr_movie.get('title'),
                     availability=Availability.RADARR,
+                    watch_date=None,  # Radarr doesn't track watch status
+                    progress_date=None,  # Radarr doesn't track progress
                     added_date=added_date,
                     watch_status=WatchStatus.NOT_WATCHED,  # Radarr doesn't track watch status
                     in_watchlist=False,  # Will be updated with watchlist data
@@ -73,10 +76,10 @@ class RadarrService:
             print(f"Error fetching movies from Radarr: {str(e)}")
             return []
 
-    def _parse_date(self, date_str) -> datetime:
+    def _parse_date(self, date_str) -> Optional[datetime]:
         """Parse date string from Radarr API"""
         if not date_str:
-            return datetime.now().replace(tzinfo=None)
+            return None
 
         try:
             # Parse date and ensure it's timezone-naive for consistency
@@ -85,4 +88,4 @@ class RadarrService:
                 dt = dt.replace(tzinfo=None)
             return dt
         except (ValueError, TypeError):
-            return datetime.now().replace(tzinfo=None)
+            return None

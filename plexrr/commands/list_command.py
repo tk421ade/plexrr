@@ -37,9 +37,10 @@ def list_movies(sort_by):
         if sort_by == 'title':
             all_movies.sort(key=lambda x: x.title.lower())
         else:  # sort by date
-            # Sort by watch_date if available, otherwise by added_date
+            # Sort by watch_date or progress_date if available, otherwise by added_date
+            # Handle None dates by placing them at the end
             all_movies.sort(
-                key=lambda x: (x.watch_date or x.added_date), 
+                key=lambda x: (x.watch_date or x.progress_date or x.added_date or datetime(1900, 1, 1)), 
                 reverse=True
             )
 
