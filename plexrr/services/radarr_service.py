@@ -19,6 +19,44 @@ class RadarrService:
             'Content-Type': 'application/json'
         }
 
+    def get_movie_details(self, movie_id) -> Dict:
+        """Get detailed information about a specific movie from Radarr"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v3/movie/{movie_id}", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Error fetching movie details from Radarr: {str(e)}")
+            return {}
+
+    def get_tag_names(self, tag_ids) -> List[str]:
+        """Get tag names from tag IDs"""
+        if not tag_ids:
+            return []
+
+        try:
+            # Get all tags
+            response = requests.get(
+                f"{self.base_url}/api/v3/tag", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            all_tags = response.json()
+
+            # Filter to just the tags we need
+            tag_names = []
+            for tag in all_tags:
+                if tag['id'] in tag_ids:
+                    tag_names.append(tag['label'])
+
+            return tag_names
+        except requests.RequestException as e:
+            print(f"Error fetching tags from Radarr: {str(e)}")
+            return []
+
     def get_movies(self) -> List[Movie]:
         """Get all movies from Radarr"""
         try:
