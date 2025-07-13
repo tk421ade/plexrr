@@ -205,8 +205,11 @@ class PlexService:
         """Get the date when a movie was added to Plex"""
         try:
             if hasattr(plex_movie, 'addedAt') and plex_movie.addedAt:
-                # Use timezone-naive datetime for consistency
-                return plex_movie.addedAt.replace(tzinfo=None)
+                # Handle both datetime objects and timestamps
+                if isinstance(plex_movie.addedAt, (int, float)):
+                    return datetime.fromtimestamp(plex_movie.addedAt).replace(tzinfo=None)
+                else:
+                    return plex_movie.addedAt.replace(tzinfo=None)
             return None
         except (AttributeError, TypeError):
             return None

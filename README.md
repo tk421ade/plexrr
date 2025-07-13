@@ -44,6 +44,23 @@ plexrr list
 
 # Sort by date added/watched
 plexrr list --sort-by date
+
+# Filter options
+plexrr list --has-size             # Only movies with file size
+plexrr list --no-size              # Only movies without file size
+plexrr list --days 10              # Only movies older than 10 days
+plexrr list --watchlist            # Only movies in watchlist
+plexrr list --no-watchlist         # Only movies not in watchlist
+plexrr list --availability plex    # Only movies available in Plex
+plexrr list --availability radarr  # Only movies available in Radarr
+plexrr list --availability both    # Only movies available in both
+plexrr list --status watched       # Only watched movies
+plexrr list --status in_progress   # Only in-progress movies
+plexrr list --status not_watched   # Only unwatched movies
+plexrr list --tag auto             # Only movies with specified Radarr tag
+
+# Combine multiple filters
+plexrr list --sort-by date --availability plex --status watched
 ```
 
 ## License
