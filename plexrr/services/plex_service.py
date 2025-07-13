@@ -58,14 +58,11 @@ class PlexService:
                                 for part in media.parts:
                                     if hasattr(part, 'file') and part.file:
                                         file_path = part.file
-                                        # Get file size if the file exists
-                                        if os.path.exists(file_path):
-                                            file_size = os.path.getsize(file_path)
+                                        if file_size is None:
+                                            file_size = part.size
+                                        else:
+                                            file_size += part.size
                                         break
-                                if file_path:
-                                    break
-                            if file_path:
-                                break
 
                     # Get actual added date from Plex
                     added_date = self._get_added_date(plex_movie)
