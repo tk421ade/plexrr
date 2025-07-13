@@ -44,11 +44,12 @@ def list_movies(sort_by):
             )
 
         # Display results
-        headers = ['Title', 'Available In', 'Date', 'Status', 'Watchlist']
+        headers = ['Title', 'Available In', 'Size', 'Date', 'Status', 'Watchlist']
         table = [[
             movie.title,
             movie.availability.value,
-            (movie.watch_date or movie.added_date).strftime('%Y-%m-%d'),
+            movie.get_formatted_size(),
+            movie.get_formatted_date(),
             movie.watch_status.value,
             'Yes' if movie.in_watchlist else 'No'
         ] for movie in all_movies]

@@ -1,4 +1,5 @@
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 from typing import List, Dict
 
 from plexapi.server import PlexServer
@@ -44,6 +45,24 @@ class PlexService:
                             elif 'tmdb://' in guid.id:
                                 tmdb_id = int(guid.id.split('tmdb://')[1])
 
+                    # Get file path and size if available
+                    file_path = None
+                    file_size = None
+                    if hasattr(plex_movie, 'media') and plex_movie.media:
+                        for media in plex_movie.media:
+                            if hasattr(media, 'parts') and media.parts:
+                                for part in media.parts:
+                                    if hasattr(part, 'file') and part.file:
+                                        file_path = part.file
+                                        # Get file size if the file exists
+                                        if os.path.exists(file_path):
+                                            file_size = os.path.getsize(file_path)
+                                        break
+                                if file_path:
+                                    break
+                            if file_path:
+                                break
+
                     # Create movie object
                     movie = Movie(
                         title=plex_movie.title,
@@ -52,6 +71,8 @@ class PlexService:
                         added_date=self._get_added_date(plex_movie),
                         watch_status=status,
                         in_watchlist=False,  # Will be updated with watchlist data
+                        file_size=file_size,
+                        file_path=file_path,
                         plex_id=plex_movie.ratingKey,
                         imdb_id=imdb_id,
                         tmdb_id=tmdb_id
@@ -116,7 +137,7 @@ class PlexService:
                     movie = Movie(
                         title=title,
                         availability=Availability.PLEX,  # May be adjusted during merging
-                        added_date=datetime.now(),  # RSS doesn't have added date
+                        added_date=datetime.now().replace(tzinfo=None),  # RSS doesn't have added date
                         in_watchlist=True,
                         imdb_id=imdb_id,
                         tmdb_id=tmdb_id
@@ -155,7 +176,7 @@ class PlexService:
                     movie = Movie(
                         title=item.title,
                         availability=Availability.PLEX,  # May be adjusted during merging
-                        added_date=datetime.now(),  # Watchlist doesn't have added date
+                        added_date=datetime.now().replace(tzinfo=None),  # Watchlist doesn't have added date
                         in_watchlist=True,
                         imdb_id=imdb_id,
                         tmdb_id=tmdb_id
@@ -174,13 +195,15 @@ class PlexService:
     def _get_added_date(self, plex_movie) -> datetime:
         """Get the date when a movie was added to Plex"""
         try:
-            return datetime.fromtimestamp(plex_movie.addedAt)
+            # Use timezone-naive datetime for consistency
+            return datetime.fromtimestamp(plex_movie.addedAt).replace(tzinfo=None)
         except (AttributeError, TypeError):
-            return datetime.now()
+            return datetime.now().replace(tzinfo=None)
 
     def _get_last_watched_date(self, plex_movie) -> datetime:
         """Get the date when a movie was last watched"""
         try:
-            return datetime.fromtimestamp(plex_movie.lastViewedAt)
+            # Use timezone-naive datetime for consistency
+            return datetime.fromtimestamp(plex_movie.lastViewedAt).replace(tzinfo=None)
         except (AttributeError, TypeError):
             return None
