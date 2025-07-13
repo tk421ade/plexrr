@@ -1,0 +1,27 @@
+# PlexRR Configuration Example
+# Copy this file to ~/.config/plexrr/config.yml and modify as needed
+
+plex:
+  # Your Plex server base URL
+  base_url: "http://localhost:32400"
+  # Your Plex authentication token
+  # To get your token, follow the instructions at:
+  # https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+  token: "your-plex-token-here"
+
+  # Watchlist configuration - use EITHER username/password OR rss_feed_url
+
+  # Option 1: Plex account credentials (for standard watchlist access)
+  # username: "your-plex-username"
+  # password: "your-plex-password"
+
+  # Option 2: Plex watchlist RSS feed URL (doesn't require credentials)
+  # Example: https://rss.plex.tv/264f6ebe-d3b3-4e82-a870-137ce2cdc994
+  watchlist_rss: "your-plex-watchlist-rss-url"
+
+radarr:
+  # Your Radarr server base URL
+  base_url: "http://localhost:7878"
+  # Your Radarr API key
+  # Find this in Radarr under Settings -> General -> Security
+  api_key: "your-radarr-api-key-here"
