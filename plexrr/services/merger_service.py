@@ -20,6 +20,11 @@ def merge_movies(plex_movies: List[Movie], radarr_movies: List[Movie],
             existing_movie = merged_movies[key]
             existing_movie.availability = Availability.BOTH
             existing_movie.radarr_id = movie.radarr_id
+
+            # Use file size from either source, prioritizing the one that has it
+            if existing_movie.file_size is None and movie.file_size is not None:
+                existing_movie.file_size = movie.file_size
+                existing_movie.file_path = movie.file_path
             # Keep other metadata from Plex (watch status, dates, etc)
         else:
             # Movie only exists in Radarr

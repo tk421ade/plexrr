@@ -15,6 +15,7 @@ setup(
         'arrapi>=1.4.2',
         'tabulate>=0.9.0',
         'python-dateutil>=2.8.2',
+        'humanize>=4.6.0',
     ],
     entry_points={
         'console_scripts': [

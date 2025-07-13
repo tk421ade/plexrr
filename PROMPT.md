@@ -7,6 +7,7 @@
 5. Implement 'list' command showing:
    - Title
    - Availability (Plex/Radarr/Both)
+   - File size (if file exists)
    - Watch date/Add date
    - Watch Status
    - Watchlist status
