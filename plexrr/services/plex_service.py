@@ -206,7 +206,7 @@ class PlexService:
         try:
             if hasattr(plex_movie, 'addedAt') and plex_movie.addedAt:
                 # Use timezone-naive datetime for consistency
-                return datetime.fromtimestamp(plex_movie.addedAt).replace(tzinfo=None)
+                return plex_movie.addedAt.replace(tzinfo=None)
             return None
         except (AttributeError, TypeError):
             return None
