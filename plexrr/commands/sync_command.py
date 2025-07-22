@@ -1,5 +1,7 @@
 import click
 import time
+import json
+import logging
 from typing import List
 
 from ..services.plex_service import PlexService
@@ -9,17 +11,44 @@ from ..models.movie import Movie, Availability
 from ..utils.config_loader import get_config
 
 @click.command(name='sync')
+@click.option('--quality-profile', required=True, type=int, help='Quality profile ID to use (run "profiles" command to see available options)')
 @click.option('--dry-run', is_flag=True, help='Show what would be done without making changes')
 @click.option('--confirm', is_flag=True, help='Prompt for confirmation before each action')
-def sync_movies(dry_run, confirm):
+@click.option('--verbose', is_flag=True, help='Enable verbose debug output')
+def sync_movies(quality_profile, dry_run, confirm, verbose):
     """Sync movies from Plex to Radarr (add Plex movies to Radarr)"""
     try:
+        # Configure logging based on verbose flag
+        log_level = logging.DEBUG if verbose else logging.INFO
+        logging.basicConfig(level=log_level, format='%(levelname)s: %(message)s')
+        logger = logging.getLogger('plexrr')
+
+        if verbose:
+            logger.debug("Verbose mode enabled")
+
         config = get_config()
+
+        if verbose:
+            logger.debug(f"Using quality profile ID: {quality_profile}")
 
         # Initialize services
         click.echo("Initializing services...")
         plex_service = PlexService(config['plex'])
         radarr_service = RadarrService(config['radarr'])
+
+        # Verify Radarr root folders
+        if verbose:
+            logger.debug("Checking Radarr root folders")
+        try:
+            root_folders = radarr_service.get_root_folders()
+            if not root_folders:
+                click.echo("Error: No root folders found in Radarr. Please configure at least one root folder.")
+                return
+            if verbose:
+                logger.debug(f"Found {len(root_folders)} root folders. Will use: {root_folders[0]['path']}")
+        except Exception as e:
+            click.echo(f"Error checking Radarr root folders: {str(e)}")
+            return
 
         # Get movies from both services
         click.echo("Fetching movies from Plex...")
@@ -82,16 +111,25 @@ def sync_movies(dry_run, confirm):
             # Add the movie to Radarr using the service
             try:
                 # Attempt to add the movie to Radarr
-                response = radarr_service.add_movie(movie)
+                response = radarr_service.add_movie(movie, quality_profile)
                 added_count += 1
                 click.echo(f"Successfully added {movie.title} to Radarr")
             except Exception as e:
-                click.echo(f"Error adding {movie.title} to Radarr: {str(e)}", err=True)
+                error_msg = f"Error adding {movie.title} to Radarr: {str(e)}"
+                click.echo(error_msg, err=True)
+                if verbose:
+                    logger.exception("Detailed error information:")
 
         # Summary
         click.echo(f"\nSync completed:")
         click.echo(f"- {added_count} movies added to Radarr")
         click.echo(f"- {skipped_count} movies skipped")
 
+        if verbose:
+            logger.debug("Sync process completed successfully")
+
     except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
+        error_msg = f"Error: {str(e)}"
+        click.echo(error_msg, err=True)
+        if verbose:
+            logger.exception("Detailed error information:")

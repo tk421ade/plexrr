@@ -61,6 +61,18 @@ plexrr list --tag auto             # Only movies with specified Radarr tag
 
 # Combine multiple filters
 plexrr list --sort-by date --availability plex --status watched
+
+# Get available quality profiles from Radarr
+plexrr profiles
+
+# Get available root folders from Radarr
+plexrr folders
+
+# Sync movies from Plex to Radarr
+plexrr sync --quality-profile 1    # Add movies in Plex but not in Radarr
+plexrr sync --quality-profile 1 --confirm  # Ask for confirmation for each movie
+plexrr sync --quality-profile 1 --dry-run  # Show what would be done without changes
+plexrr sync --quality-profile 1 --verbose  # Show detailed debug information
 ```
 
 ## License
