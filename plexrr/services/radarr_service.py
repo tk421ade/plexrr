@@ -281,6 +281,29 @@ class RadarrService:
             print(f"Error deleting movie file from Radarr: {str(e)}")
             raise
 
+    def delete_movie(self, movie_id: int) -> bool:
+        """Delete a movie from Radarr and its files
+
+        Args:
+            movie_id: Radarr movie ID to delete
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            requests.RequestException: If API request fails
+        """
+        try:
+            response = requests.delete(
+                f"{self.base_url}/api/v3/movie/{movie_id}?deleteFiles=true", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return True
+        except requests.RequestException as e:
+            print(f"Error deleting movie from Radarr: {str(e)}")
+            raise
+
     def get_quality_definition(self, quality_id: int) -> Dict:
         """Get quality definition details from Radarr
 

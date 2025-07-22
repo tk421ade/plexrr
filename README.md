@@ -79,6 +79,19 @@ plexrr clean                     # Remove lower quality versions automatically
 plexrr clean --confirm           # Ask for confirmation before each deletion
 plexrr clean --dry-run           # Show what would be removed without making changes
 plexrr clean --verbose           # Show detailed debug information
+
+# Delete movies from Radarr based on filters
+plexrr delete                    # Show what would be deleted (dry run)
+plexrr delete --execute          # Actually delete the movies and their files
+plexrr delete --confirm          # Ask for confirmation before each deletion
+plexrr delete --has-size         # Only delete movies with files
+plexrr delete --no-size          # Only delete movies without files
+plexrr delete --days 60          # Only delete movies older than 60 days
+plexrr delete --watchlist        # Only delete movies in watchlist
+plexrr delete --no-watchlist     # Only delete movies not in watchlist
+plexrr delete --availability radarr  # Only delete movies only in Radarr
+plexrr delete --status watched   # Only delete watched movies
+plexrr delete --tag unwanted     # Only delete movies with specific tag
 ```
 
 ## License
