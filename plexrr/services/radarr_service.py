@@ -127,3 +127,110 @@ class RadarrService:
             return dt
         except (ValueError, TypeError):
             return None
+
+    def add_movie(self, movie: Movie, quality_profile_id: int) -> Dict:
+        """Add a movie to Radarr
+
+        Args:
+            movie: Movie object with tmdb_id or imdb_id
+            quality_profile_id: ID of the quality profile to use
+
+        Returns:
+            Dict with the response from Radarr API
+
+        Raises:
+            ValueError: If movie has no valid ID
+            requests.RequestException: If API request fails
+        """
+        if not movie.tmdb_id and not movie.imdb_id:
+            raise ValueError("Movie must have either TMDB ID or IMDB ID to be added to Radarr")
+
+        # Get root folders to use the first one
+        root_folders = self.get_root_folders()
+        if not root_folders:
+            raise ValueError("No root folders found in Radarr. Please configure at least one root folder.")
+
+        root_folder_path = root_folders[0]['path']
+
+        # Prepare the request data
+        data = {
+            "title": movie.title,
+            "qualityProfileId": quality_profile_id,
+            "monitored": True,
+            "minimumAvailability": "released",
+            "rootFolderPath": root_folder_path,
+            "addOptions": {
+                "searchForMovie": True
+            }
+        }
+
+        # Add the appropriate ID
+        if movie.tmdb_id:
+            data["tmdbId"] = movie.tmdb_id
+        elif movie.imdb_id:
+            data["imdbId"] = movie.imdb_id
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/v3/movie", 
+                headers=self.headers,
+                json=data
+            )
+
+            # If there's an error, get more detailed information
+            if not response.ok:
+                error_msg = f"{response.status_code} {response.reason} for url: {response.url}"
+                try:
+                    error_detail = response.json()
+                    error_msg += f"\nAPI Error: {error_detail}"
+                except:
+                    error_msg += f"\nResponse text: {response.text[:200]}"
+                error_msg += f"\nRequest data: {data}"
+                raise requests.HTTPError(error_msg, response=response)
+
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Error adding movie to Radarr: {str(e)}")
+            print(f"Request data: {data}")
+            raise
+
+    def get_quality_profiles(self) -> List[Dict]:
+        """Get all quality profiles from Radarr
+
+        Returns:
+            List of quality profiles with id and name
+
+        Raises:
+            requests.RequestException: If API request fails
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v3/qualityprofile", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Error fetching quality profiles from Radarr: {str(e)}")
+            raise
+
+    def get_root_folders(self) -> List[Dict]:
+        """Get all root folders from Radarr
+
+        Returns:
+            List of root folders with path and id
+
+        Raises:
+            requests.RequestException: If API request fails
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v3/rootfolder", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Error fetching root folders from Radarr: {str(e)}")
+            raise
