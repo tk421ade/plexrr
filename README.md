@@ -73,6 +73,12 @@ plexrr sync --quality-profile 1    # Add movies in Plex but not in Radarr
 plexrr sync --quality-profile 1 --confirm  # Ask for confirmation for each movie
 plexrr sync --quality-profile 1 --dry-run  # Show what would be done without changes
 plexrr sync --quality-profile 1 --verbose  # Show detailed debug information
+
+# Clean duplicate movie versions (keep only best quality)
+plexrr clean                     # Remove lower quality versions automatically
+plexrr clean --confirm           # Ask for confirmation before each deletion
+plexrr clean --dry-run           # Show what would be removed without making changes
+plexrr clean --verbose           # Show detailed debug information
 ```
 
 ## License

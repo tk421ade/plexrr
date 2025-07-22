@@ -234,3 +234,79 @@ class RadarrService:
         except requests.RequestException as e:
             print(f"Error fetching root folders from Radarr: {str(e)}")
             raise
+
+    def get_movie_files(self, movie_id: int) -> List[Dict]:
+        """Get all files for a movie from Radarr
+
+        Args:
+            movie_id: Radarr movie ID
+
+        Returns:
+            List of movie files with details
+
+        Raises:
+            requests.RequestException: If API request fails
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v3/moviefile?movieId={movie_id}", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Error fetching movie files from Radarr: {str(e)}")
+            raise
+
+    def delete_movie_file(self, file_id: int) -> bool:
+        """Delete a movie file from Radarr
+
+        Args:
+            file_id: Movie file ID to delete
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            requests.RequestException: If API request fails
+        """
+        try:
+            response = requests.delete(
+                f"{self.base_url}/api/v3/moviefile/{file_id}", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return True
+        except requests.RequestException as e:
+            print(f"Error deleting movie file from Radarr: {str(e)}")
+            raise
+
+    def get_quality_definition(self, quality_id: int) -> Dict:
+        """Get quality definition details from Radarr
+
+        Args:
+            quality_id: Quality ID to look up
+
+        Returns:
+            Quality definition details
+
+        Raises:
+            requests.RequestException: If API request fails
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v3/qualitydefinition", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            definitions = response.json()
+
+            # Find the specific quality definition
+            for definition in definitions:
+                if definition.get('quality', {}).get('id') == quality_id:
+                    return definition
+
+            return {}
+        except requests.RequestException as e:
+            print(f"Error fetching quality definitions from Radarr: {str(e)}")
+            raise
