@@ -4,6 +4,7 @@ from .commands.sync_command import sync_movies
 from .commands.profiles_command import list_profiles
 from .commands.folders_command import list_folders
 from .commands.clean_command import clean_movies
+from .commands.delete_command import delete_movies
 
 @click.group()
 def cli():
@@ -15,6 +16,7 @@ cli.add_command(sync_movies)
 cli.add_command(list_profiles)
 cli.add_command(list_folders)
 cli.add_command(clean_movies)
+cli.add_command(delete_movies)
 
 if __name__ == '__main__':
     cli()
