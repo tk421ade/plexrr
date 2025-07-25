@@ -23,6 +23,91 @@ class PlexService:
         self.token = config['token']
         self.server = PlexServer(self.base_url, self.token)
 
+    def delete_watched_episodes(self, show_id: str = None, confirm: bool = False, days: int = None, skip_pilots: bool = False) -> Dict[str, int]:
+        """Delete all watched episodes for a specific show or all shows
+
+        Args:
+            show_id: Optional Plex ID of the show to delete episodes from (all shows if None)
+            confirm: If True, ask for confirmation before each deletion
+            days: Only delete episodes watched more than X days ago
+            skip_pilots: If True, skip pilot episodes (S01E01) when deleting
+
+        Returns:
+            Dict with count of deleted and skipped episodes
+        """
+        results = {
+            'deleted': 0,
+            'skipped': 0
+        }
+
+        try:
+            # Find all show library sections
+            show_sections = [section for section in self.server.library.sections() if section.type == 'show']
+
+            if not show_sections:
+                print("No TV show libraries found in Plex")
+                return results
+
+            # Get the specific show if ID provided, otherwise process all shows
+            for section in show_sections:
+                shows = [section.fetchItem(show_id)] if show_id else section.all()
+
+                for plex_show in shows:
+                    if not plex_show:
+                        continue
+
+                    # Process each watched episode
+                    watched_episodes = [ep for ep in plex_show.episodes() if ep.isWatched and (not hasattr(ep, 'viewOffset') or ep.viewOffset == 0)]
+
+                    # Filter by days if specified
+                    if days is not None:
+                        from datetime import datetime, timedelta
+                        cutoff_date = datetime.now() - timedelta(days=days)
+                        watched_episodes = [
+                            ep for ep in watched_episodes 
+                            if hasattr(ep, 'lastViewedAt') and ep.lastViewedAt 
+                            and ep.lastViewedAt.replace(tzinfo=None) < cutoff_date
+                        ]
+
+                    # Skip pilot episodes if specified
+                    if skip_pilots:
+                        watched_episodes = [
+                            ep for ep in watched_episodes
+                            if not (ep.seasonNumber == 1 and ep.index == 1)
+                        ]
+
+                    if not watched_episodes:
+                        print(f"No watched episodes found for '{plex_show.title}'")
+                        continue
+
+                    print(f"Found {len(watched_episodes)} watched episodes in '{plex_show.title}'")
+
+                    for episode in watched_episodes:
+                        episode_info = f"{plex_show.title} - S{episode.seasonNumber:02d}E{episode.index:02d} - {episode.title}"
+
+                        # If confirmation is required, ask user
+                        if confirm:
+                            import click
+                            if not click.confirm(f"Delete {episode_info}?", default=False):
+                                print(f"Skipped: {episode_info}")
+                                results['skipped'] += 1
+                                continue
+
+                        # Delete the episode
+                        try:
+                            episode.delete()
+                            print(f"Deleted: {episode_info}")
+                            results['deleted'] += 1
+                        except Exception as e:
+                            print(f"Error deleting {episode_info}: {str(e)}")
+                            results['skipped'] += 1
+
+            return results
+
+        except Exception as e:
+            print(f"Error deleting watched episodes: {str(e)}")
+            return results
+
     def get_movies(self) -> List[Movie]:
         """Get all movies from Plex library"""
         movies = []
