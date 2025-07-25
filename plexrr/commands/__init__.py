@@ -1,5 +1,6 @@
 """Commands package for PlexRR"""
-
+# Initialize commands package
+# This ensures all command modules can be properly imported
 from .list_command import list_movies
 from .sync_command import sync_movies
 from .profiles_command import list_profiles

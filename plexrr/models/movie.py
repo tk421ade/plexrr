@@ -12,6 +12,7 @@ class WatchStatus(Enum):
 class Availability(Enum):
     PLEX = "Plex"
     RADARR = "Radarr"
+    SONARR = "Sonarr"
     BOTH = "Both"
 
 @dataclass

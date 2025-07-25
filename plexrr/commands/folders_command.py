@@ -7,8 +7,10 @@ from ..utils.config_loader import get_config
 
 @click.command(name='folders')
 @click.option('--verbose', is_flag=True, help='Enable verbose debug output')
-def list_folders(verbose):
-    """List all root folders available in Radarr"""
+@click.option('--service', type=click.Choice(['radarr', 'sonarr']), default='radarr',
+              help='Service to fetch folders from (radarr/sonarr)')
+def list_folders(verbose, service):
+    """List all root folders available in Radarr or Sonarr"""
     try:
         # Configure logging based on verbose flag
         log_level = logging.DEBUG if verbose else logging.INFO

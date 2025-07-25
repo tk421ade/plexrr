@@ -5,10 +5,11 @@ from .commands.profiles_command import list_profiles
 from .commands.folders_command import list_folders
 from .commands.clean_command import clean_movies
 from .commands.delete_command import delete_movies
+from .commands.config_command import config_group
 
 @click.group()
 def cli():
-    """PlexRR - A tool to manage movies across Plex and Radarr"""
+    """PlexRR - A tool to manage media across Plex, Radarr, and Sonarr"""
     pass
 
 cli.add_command(list_movies)
@@ -17,6 +18,12 @@ cli.add_command(list_profiles)
 cli.add_command(list_folders)
 cli.add_command(clean_movies)
 cli.add_command(delete_movies)
+cli.add_command(config_group)
+
+    # Handle common errors with helpful messages
+@cli.result_callback()
+def process_result(result, **kwargs):
+    return result
 
 if __name__ == '__main__':
     cli()

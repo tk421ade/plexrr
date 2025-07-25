@@ -1,13 +1,14 @@
 # PlexRR
 
-A Python command-line tool to manage movies across Plex and Radarr.
+A Python command-line tool to manage media across Plex, Radarr, and Sonarr.
 
 ## Features
 
 - List all movies from Plex and Radarr with merged information
-- View movie availability across platforms
+- List all TV shows from Plex and Sonarr with merged information
+- View media availability across platforms
 - Track watch status and history
-- See which movies are in your Plex Watchlist
+- See which movies and TV shows are in your Plex Watchlist
 
 ## Installation
 
@@ -17,7 +18,19 @@ pip install plexrr
 
 ## Configuration
 
-Create a `config.yml` file in the `~/.config/plexrr/` directory:
+You can create a configuration file in several ways:
+
+1. Generate a template configuration with the built-in command:
+
+```bash
+# Create a default configuration file in the default location
+plexrr config create
+
+# Create a configuration file in a specific location
+plexrr config create --path ./config.yml
+```
+
+2. Manually create a `config.yml` file in the `~/.config/plexrr/` directory or in your current working directory:
 
 ```yaml
 plex:
@@ -34,33 +47,63 @@ plex:
 radarr:
   base_url: "http://localhost:7878"
   api_key: "your-radarr-api-key"
+
+# Optional: Configure Sonarr for TV shows
+sonarr:
+  base_url: "http://localhost:8989"
+  api_key: "your-sonarr-api-key"
 ```
+
+3. Validate your configuration:
+
+```bash
+plexrr config validate
+```
+
+### Configuration Details
+
+- **Plex token**: To find your Plex token, follow the instructions at [Plex Support](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)
+- **Radarr/Sonarr API keys**: Find these in the settings of your Radarr/Sonarr web interface under Settings → General → Security
+
+### Troubleshooting
+
+If you get a configuration error:
+
+1. Run `plexrr config validate` to check your configuration
+2. Ensure that all servers are running and accessible
+3. Check for typos in URLs and API keys
+4. Make sure the required `radarr` section is present
 
 ## Usage
 
 ```bash
-# List all movies
+# List all media (movies and TV shows)
 plexrr list
+
+# List only movies or TV shows
+plexrr list --type movies
+plexrr list --type shows
 
 # Sort by date added/watched
 plexrr list --sort-by date
 
 # Filter options
-plexrr list --has-size             # Only movies with file size
-plexrr list --no-size              # Only movies without file size
-plexrr list --days 10              # Only movies older than 10 days
-plexrr list --watchlist            # Only movies in watchlist
-plexrr list --no-watchlist         # Only movies not in watchlist
-plexrr list --availability plex    # Only movies available in Plex
+plexrr list --has-size             # Only media with file size
+plexrr list --no-size              # Only media without file size
+plexrr list --days 10              # Only media older than 10 days
+plexrr list --watchlist            # Only media in watchlist
+plexrr list --no-watchlist         # Only media not in watchlist
+plexrr list --availability plex    # Only media available in Plex
 plexrr list --availability radarr  # Only movies available in Radarr
-plexrr list --availability both    # Only movies available in both
-plexrr list --status watched       # Only watched movies
-plexrr list --status in_progress   # Only in-progress movies
-plexrr list --status not_watched   # Only unwatched movies
-plexrr list --tag auto             # Only movies with specified Radarr tag
+plexrr list --availability sonarr  # Only TV shows available in Sonarr
+plexrr list --availability both    # Only media available in both services
+plexrr list --status watched       # Only watched media
+plexrr list --status in_progress   # Only in-progress media
+plexrr list --status not_watched   # Only unwatched media
+plexrr list --tag auto             # Only media with specified tag
 
 # Combine multiple filters
-plexrr list --sort-by date --availability plex --status watched
+plexrr list --sort-by date --availability plex --status watched --type shows
 
 # Get available quality profiles from Radarr
 plexrr profiles

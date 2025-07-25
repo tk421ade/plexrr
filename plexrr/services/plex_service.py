@@ -1,4 +1,9 @@
 import os
+import re
+import logging
+import feedparser
+import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
@@ -6,6 +11,7 @@ from plexapi.server import PlexServer
 from plexapi.myplex import MyPlexAccount
 
 from ..models.movie import Movie, WatchStatus, Availability
+from ..models.tvshow import TVShow
 
 class PlexService:
     """Service for interacting with Plex API"""
@@ -99,6 +105,197 @@ class PlexService:
             print("Warning: No valid watchlist configuration found. "
                   "Please add either 'watchlist_rss' URL or Plex credentials to your config.")
             return []
+
+    def get_tv_shows(self) -> List[TVShow]:
+        """Get TV shows from Plex"""
+        tv_shows = []
+
+        try:
+            # Find all show library sections
+            show_sections = [section for section in self.server.library.sections() if section.type == 'show']
+
+            if not show_sections:
+                print("No TV show libraries found in Plex")
+                return []
+
+            # Get all shows from each section
+            for section in show_sections:
+                for plex_show in section.all():
+                    # Determine watch status
+                    if plex_show.isWatched:
+                        status = WatchStatus.WATCHED
+                        watch_date = self._get_last_watched_date(plex_show)
+                        progress_date = None
+                    elif hasattr(plex_show, 'viewOffset') and plex_show.viewOffset > 0:
+                        status = WatchStatus.IN_PROGRESS
+                        watch_date = None
+                        progress_date = self._get_last_viewed_date(plex_show)
+                    else:
+                        status = WatchStatus.NOT_WATCHED
+                        watch_date = None
+                        progress_date = None
+
+                    # Extract external IDs
+                    tvdb_id = None
+                    imdb_id = None
+
+                    if hasattr(plex_show, 'guids') and plex_show.guids:
+                        for guid in plex_show.guids:
+                            if 'tvdb://' in guid.id:
+                                try:
+                                    tvdb_id = int(guid.id.split('tvdb://')[1])
+                                except (ValueError, IndexError):
+                                    pass
+                            elif 'imdb://' in guid.id:
+                                try:
+                                    imdb_id = guid.id.split('imdb://')[1]
+                                except IndexError:
+                                    pass
+
+                    # Get season and episode counts
+                    season_count = 0
+                    episode_count = 0
+
+                    if hasattr(plex_show, 'seasons'):
+                        season_count = len(plex_show.seasons())
+
+                    if hasattr(plex_show, 'episodes'):
+                        episode_count = len(plex_show.episodes())
+
+                    # Get file sizes (total for all episodes)
+                    file_size = None
+                    if hasattr(plex_show, 'episodes'):
+                        for episode in plex_show.episodes():
+                            if hasattr(episode, 'media') and episode.media:
+                                for media in episode.media:
+                                    if hasattr(media, 'parts') and media.parts:
+                                        for part in media.parts:
+                                            if hasattr(part, 'size') and part.size:
+                                                if file_size is None:
+                                                    file_size = part.size
+                                                else:
+                                                    file_size += part.size
+
+                    # Get actual added date from Plex
+                    added_date = self._get_added_date(plex_show)
+
+                    # Create TV show object
+                    tv_show = TVShow(
+                        title=plex_show.title,
+                        availability=Availability.PLEX,
+                        watch_date=watch_date,
+                        progress_date=progress_date,
+                        added_date=added_date,
+                        watch_status=status,
+                        in_watchlist=False,  # Will be updated with watchlist data
+                        file_size=file_size,
+                        plex_id=plex_show.ratingKey,
+                        tvdb_id=tvdb_id,
+                        imdb_id=imdb_id,
+                        season_count=season_count,
+                        episode_count=episode_count
+                    )
+
+                    tv_shows.append(tv_show)
+
+
+        except Exception as e:
+            print(f"Error fetching TV shows from Plex: {str(e)}")
+
+        return tv_shows
+
+    def get_tv_watchlist(self) -> List[TVShow]:
+        """Get TV shows from Plex watchlist"""
+        watchlist_shows = []
+
+        # Check if RSS feed URL is provided
+        if 'watchlist_rss' in self.config:
+            try:
+                feed = feedparser.parse(self.config['watchlist_rss'])
+                for entry in feed.entries:
+                    # Check if it's a TV show (has season/episode info)
+                    title = entry.title
+                    if ('tv' in entry.get('plex_itemtype', '').lower() or
+                        'season' in title.lower() or
+                        'episode' in title.lower() or
+                        re.search(r'\s*\(S\d+.*\)\s*', title)):
+
+                        # Remove season/episode info from title
+                        title = re.sub(r'\s*\(S\d+.*\)\s*', '', title)
+
+                        # Try to extract TVDB/IMDB IDs from guid
+                        tvdb_id = None
+                        imdb_id = None
+                        if hasattr(entry, 'plex_guid'):
+                            for guid in entry.plex_guid:
+                                if 'tvdb' in guid.lower():
+                                    try:
+                                        tvdb_id = int(re.search(r'tvdb://(\d+)', guid).group(1))
+                                    except (AttributeError, ValueError, TypeError):
+                                        pass
+                                elif 'imdb' in guid.lower():
+                                    try:
+                                        imdb_id = re.search(r'imdb://(tt\d+)', guid).group(1)
+                                    except (AttributeError, ValueError, TypeError):
+                                        pass
+
+                        # Create TV show object for watchlist
+                        show = TVShow(
+                            title=title,
+                            availability=Availability.PLEX,  # Will be updated in merging
+                            watch_status=WatchStatus.NOT_WATCHED,
+                            in_watchlist=True,
+                            tvdb_id=tvdb_id,
+                            imdb_id=imdb_id
+                        )
+
+                        watchlist_shows.append(show)
+
+            except Exception as e:
+                print(f"Error fetching TV watchlist from RSS: {str(e)}")
+
+            # Fallback to username/password if available
+            if not watchlist_shows and 'username' in self.config and 'password' in self.config:
+                try:
+                    # Connect to MyPlex account
+                    account = MyPlexAccount(self.config['username'], self.config['password'])
+                    watchlist_items = account.watchlist()
+
+                    for item in watchlist_items:
+                        if item.type == 'show':
+                            # Extract external IDs
+                            tvdb_id = None
+                            imdb_id = None
+
+                            if hasattr(item, 'guids') and item.guids:
+                                for guid in item.guids:
+                                    if 'tvdb://' in guid.id:
+                                        try:
+                                            tvdb_id = int(guid.id.split('tvdb://')[1])
+                                        except (ValueError, IndexError):
+                                            pass
+                                    elif 'imdb://' in guid.id:
+                                        try:
+                                            imdb_id = guid.id.split('imdb://')[1]
+                                        except IndexError:
+                                            pass
+
+                            # Create TV show object for watchlist
+                            show = TVShow(
+                                title=item.title,
+                                availability=Availability.PLEX,  # Will be updated in merging
+                                watch_status=WatchStatus.NOT_WATCHED,
+                                in_watchlist=True,
+                                tvdb_id=tvdb_id,
+                                imdb_id=imdb_id
+                            )
+
+                            watchlist_shows.append(show)
+
+                except Exception as e:
+                    print(f"Error fetching TV watchlist from Plex account: {str(e)}")
+
+        return watchlist_shows
 
     def _get_watchlist_from_rss(self, rss_url: str) -> List[Movie]:
         """Get watchlist movies from RSS feed URL"""

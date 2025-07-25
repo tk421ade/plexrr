@@ -7,8 +7,10 @@ from ..utils.config_loader import get_config
 
 @click.command(name='profiles')
 @click.option('--verbose', is_flag=True, help='Enable verbose debug output')
-def list_profiles(verbose):
-    """List all quality profiles available in Radarr"""
+@click.option('--service', type=click.Choice(['radarr', 'sonarr']), default='radarr',
+              help='Service to fetch profiles from (radarr/sonarr)')
+def list_profiles(verbose, service):
+    """List all quality profiles available in Radarr or Sonarr"""
     try:
         # Configure logging based on verbose flag
         log_level = logging.DEBUG if verbose else logging.INFO
