@@ -545,6 +545,14 @@ class PlexService:
         except (AttributeError, TypeError):
             return None
 
+    def _get_last_viewed_date(self, plex_movie) -> datetime:
+        """Get the date when a movie was last viewed (for in-progress movies)"""
+        try:
+            # Use timezone-naive datetime for consistency
+            return plex_movie.lastViewedAt.replace(tzinfo=None)
+        except (AttributeError, TypeError):
+            return None
+
     def get_next_episodes(self, show_id: str = None, count: int = 1) -> Dict[str, List]:
         """Get next episodes to download for shows that are being watched
 

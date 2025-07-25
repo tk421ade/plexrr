@@ -202,8 +202,8 @@ def list_movies(sort_by, has_size, days, watchlist, availability, status, tag, t
                 click.echo("No media found matching the specified filters.")
             return
 
-        # Different headers for TV shows (include episode count)
-        headers = ['Title', 'Available In', 'Size', 'Date', 'Status', 'Watchlist']
+        # Add ID as the first column
+        headers = ['ID', 'Title', 'Available In', 'Size', 'Date', 'Status', 'Watchlist']
 
         # Build table rows
         table = []
@@ -211,7 +211,14 @@ def list_movies(sort_by, has_size, days, watchlist, availability, status, tag, t
             # Check if this is a TV show or movie
             is_show = isinstance(item, TVShow)
 
+            # Get appropriate ID based on item type
+            if is_show:
+                item_id = item.plex_id if item.plex_id else item.sonarr_id
+            else:
+                item_id = item.plex_id if item.plex_id else item.radarr_id
+
             row = [
+                item_id,
                 item.title,
                 item.availability.value,
                 item.get_formatted_size() if not is_show else item.get_formatted_episodes(),

@@ -9,6 +9,7 @@ A Python command-line tool to manage media across Plex, Radarr, and Sonarr.
 - View media availability across platforms
 - Track watch status and history
 - See which movies and TV shows are in your Plex Watchlist
+- Manage watched episodes by finding and deleting old content
 
 ## Installation
 
@@ -87,6 +88,10 @@ plexrr list --type shows
 # Sort by date added/watched
 plexrr list --sort-by date
 
+# Use the ID column to get the show-id for use with other commands
+# For example, use with delete-watched command:
+plexrr delete-watched --show-id 12345
+
 # Filter options
 plexrr list --has-size             # Only media with file size
 plexrr list --no-size              # Only media without file size
@@ -135,6 +140,15 @@ plexrr delete --no-watchlist     # Only delete movies not in watchlist
 plexrr delete --availability radarr  # Only delete movies only in Radarr
 plexrr delete --status watched   # Only delete watched movies
 plexrr delete --tag unwanted     # Only delete movies with specific tag
+
+# Find and optionally delete watched TV episodes from Plex
+plexrr delete-watched                # Shows what would be deleted (dry run)
+plexrr delete-watched --execute      # Actually delete the watched episodes
+plexrr delete-watched --confirm      # Ask for confirmation before each deletion when using --execute
+plexrr delete-watched --days 30      # Only process episodes watched more than 30 days ago (default: 10)
+plexrr delete-watched --show-id 123  # Only process episodes from a specific show
+plexrr delete-watched --skip-pilots  # Skip the first episode (S01E01) of each series
+plexrr delete-watched --verbose      # Show detailed debug information
 ```
 
 ## License
