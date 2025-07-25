@@ -23,21 +23,26 @@ class PlexService:
         self.token = config['token']
         self.server = PlexServer(self.base_url, self.token)
 
-    def delete_watched_episodes(self, show_id: str = None, confirm: bool = False, days: int = None, skip_pilots: bool = False) -> Dict[str, int]:
-        """Delete all watched episodes for a specific show or all shows
+    def delete_watched_episodes(self, show_id: str = None, confirm: bool = False, days: int = 10, skip_pilots: bool = False, execute: bool = False) -> Dict[str, any]:
+        """Find and optionally delete watched episodes for a specific show or all shows
 
         Args:
             show_id: Optional Plex ID of the show to delete episodes from (all shows if None)
             confirm: If True, ask for confirmation before each deletion
-            days: Only delete episodes watched more than X days ago
+            days: Only delete episodes watched more than X days ago (default: 10 days)
             skip_pilots: If True, skip pilot episodes (S01E01) when deleting
+            execute: If True, actually delete the files. If False, just display what would be deleted
 
         Returns:
-            Dict with count of deleted and skipped episodes
+            Dict with results including counts and total size
         """
+        import humanize
+
         results = {
             'deleted': 0,
-            'skipped': 0
+            'skipped': 0,
+            'total_size': 0,  # Total size of files to be deleted in bytes
+            'files': []       # List of files that would be/were deleted
         }
 
         try:
@@ -59,15 +64,14 @@ class PlexService:
                     # Process each watched episode
                     watched_episodes = [ep for ep in plex_show.episodes() if ep.isWatched and (not hasattr(ep, 'viewOffset') or ep.viewOffset == 0)]
 
-                    # Filter by days if specified
-                    if days is not None:
-                        from datetime import datetime, timedelta
-                        cutoff_date = datetime.now() - timedelta(days=days)
-                        watched_episodes = [
-                            ep for ep in watched_episodes 
-                            if hasattr(ep, 'lastViewedAt') and ep.lastViewedAt 
-                            and ep.lastViewedAt.replace(tzinfo=None) < cutoff_date
-                        ]
+                    # Filter by days
+                    from datetime import datetime, timedelta
+                    cutoff_date = datetime.now() - timedelta(days=days)
+                    watched_episodes = [
+                        ep for ep in watched_episodes 
+                        if hasattr(ep, 'lastViewedAt') and ep.lastViewedAt 
+                        and ep.lastViewedAt.replace(tzinfo=None) < cutoff_date
+                    ]
 
                     # Skip pilot episodes if specified
                     if skip_pilots:
@@ -77,35 +81,72 @@ class PlexService:
                         ]
 
                     if not watched_episodes:
-                        print(f"No watched episodes found for '{plex_show.title}'")
+                        print(f"No eligible watched episodes found for '{plex_show.title}'")
                         continue
 
                     print(f"Found {len(watched_episodes)} watched episodes in '{plex_show.title}'")
 
                     for episode in watched_episodes:
+                        # Get episode file size
+                        episode_size = 0
+                        file_path = None
+                        if hasattr(episode, 'media') and episode.media:
+                            for media in episode.media:
+                                if hasattr(media, 'parts') and media.parts:
+                                    for part in media.parts:
+                                        if hasattr(part, 'size') and part.size:
+                                            episode_size = part.size
+                                        if hasattr(part, 'file') and part.file:
+                                            file_path = part.file
+
                         episode_info = f"{plex_show.title} - S{episode.seasonNumber:02d}E{episode.index:02d} - {episode.title}"
+                        size_info = f" ({humanize.naturalsize(episode_size)})" if episode_size > 0 else ""
+
+                        # Display what would be deleted
+                        action = "Would delete" if not execute else "Deleting"
+                        print(f"{action}: {episode_info}{size_info}")
+
+                        # Track the episode in our results
+                        results['files'].append({
+                            'title': episode_info,
+                            'size': episode_size,
+                            'path': file_path
+                        })
+                        results['total_size'] += episode_size
 
                         # If confirmation is required, ask user
-                        if confirm:
+                        if confirm and execute:
                             import click
                             if not click.confirm(f"Delete {episode_info}?", default=False):
                                 print(f"Skipped: {episode_info}")
                                 results['skipped'] += 1
                                 continue
 
-                        # Delete the episode
-                        try:
-                            episode.delete()
-                            print(f"Deleted: {episode_info}")
+                        # Only delete if execute flag is set
+                        if execute:
+                            try:
+                                episode.delete()
+                                results['deleted'] += 1
+                                print(f"Deleted: {episode_info}")
+                            except Exception as e:
+                                print(f"Error deleting {episode_info}: {str(e)}")
+                                results['skipped'] += 1
+                        else:
+                            # If not executing, just count as "would delete"
                             results['deleted'] += 1
-                        except Exception as e:
-                            print(f"Error deleting {episode_info}: {str(e)}")
-                            results['skipped'] += 1
+
+            # Print summary
+            action = "Deleted" if execute else "Would delete"
+            print(f"\nSummary:")
+            print(f"- {action}: {results['deleted']} episodes")
+            print(f"- Size: {humanize.naturalsize(results['total_size'])}")
+            if results['skipped'] > 0:
+                print(f"- Skipped: {results['skipped']} episodes")
 
             return results
 
         except Exception as e:
-            print(f"Error deleting watched episodes: {str(e)}")
+            print(f"Error processing watched episodes: {str(e)}")
             return results
 
     def get_movies(self) -> List[Movie]:
