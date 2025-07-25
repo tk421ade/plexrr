@@ -121,7 +121,10 @@ class TVShow:
         return f"{absolute_date} [{date_type}] ({relative_time})"
 
     def get_formatted_episodes(self) -> str:
-        """Return formatted episode and season count"""
+        """Return formatted episode and season count with disk space"""
         if self.episode_count is None or self.season_count is None:
             return "N/A"
-        return f"{self.episode_count} eps, {self.season_count} seasons"
+
+        # Include disk space usage along with episode and season counts
+        disk_space = self.get_formatted_size()
+        return f"{self.episode_count} eps, {self.season_count} seasons, {disk_space}"

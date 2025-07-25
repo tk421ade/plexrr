@@ -38,9 +38,13 @@ def merge_tv_shows(plex_shows: List[TVShow], sonarr_shows: List[TVShow],
             existing_show.availability = Availability.BOTH
             existing_show.sonarr_id = show.sonarr_id
 
-            # Use file size from either source, prioritizing the one that has it
-            if existing_show.file_size is None and show.file_size is not None:
-                existing_show.file_size = show.file_size
+            # Use file size from either source, prioritizing the larger one for better accuracy
+            if show.file_size is not None:
+                if existing_show.file_size is None:
+                    existing_show.file_size = show.file_size
+                else:
+                    # If both have file size, use the larger one (which likely includes more episodes)
+                    existing_show.file_size = max(existing_show.file_size, show.file_size)
 
             # Use episode and season counts from Sonarr if Plex doesn't have them
             if existing_show.episode_count is None and show.episode_count is not None:
