@@ -3,6 +3,7 @@ import logging
 import json
 from tabulate import tabulate
 from ..services.radarr_service import RadarrService
+from ..services.sonarr_service import SonarrService
 from ..utils.config_loader import get_config
 
 @click.command(name='profiles')
@@ -18,38 +19,52 @@ def list_profiles(verbose, service):
         logger = logging.getLogger('plexrr')
 
         if verbose:
-            logger.debug("Verbose mode enabled")
+            logger.debug(f"Verbose mode enabled, using {service} service")
 
         config = get_config()
 
-        # Initialize Radarr service
-        click.echo("Connecting to Radarr...")
-        radarr_service = RadarrService(config['radarr'])
+        # Check if the requested service is configured
+        if service not in config:
+            click.echo(f"Error: {service.capitalize()} is not configured in your config file.", err=True)
+            return
+
+        # Initialize the appropriate service
+        if service == 'radarr':
+            click.echo("Connecting to Radarr...")
+            service_obj = RadarrService(config['radarr'])
+        else:  # sonarr
+            click.echo("Connecting to Sonarr...")
+            service_obj = SonarrService(config['sonarr'])
 
         # Fetch quality profiles
         click.echo("Fetching quality profiles...")
         if verbose:
-            logger.debug(f"Requesting quality profiles from Radarr API")
-        profiles = radarr_service.get_quality_profiles()
+            logger.debug(f"Requesting quality profiles from {service.capitalize()} API")
+        profiles = service_obj.get_quality_profiles()
         if verbose:
             logger.debug(f"Received {len(profiles)} profiles from API")
             logger.debug(f"Profiles data: {json.dumps(profiles, default=str)[:1000]}..." if profiles else "No profiles data")
 
         if not profiles:
-            click.echo("No quality profiles found in Radarr.")
+            click.echo(f"No quality profiles found in {service.capitalize()}.")
             return
 
-        click.echo(f"Found {len(profiles)} quality profiles.")
+        click.echo(f"Found {len(profiles)} quality profiles in {service.capitalize()}.")
 
         # Display profiles in a table
         headers = ['ID', 'Name']
         table = [[
-            profile['id'],
-            profile['name']
+            profile.get('id', 'N/A'),
+            profile.get('name', 'N/A')
         ] for profile in profiles]
 
         click.echo(tabulate(table, headers=headers, tablefmt='grid'))
-        click.echo("\nUse these profile IDs with the 'sync' command using the --quality-profile option.")
+
+        # Show appropriate usage message based on service
+        if service == 'radarr':
+            click.echo("\nUse these profile IDs with the 'sync' command using the --quality-profile option.")
+        else:  # sonarr
+            click.echo("\nUse these profile IDs with the 'download-next' command using the --quality-profile option.")
 
     except Exception as e:
         error_msg = f"Error: {str(e)}"

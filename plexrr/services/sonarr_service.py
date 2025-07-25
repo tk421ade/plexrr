@@ -242,3 +242,167 @@ class SonarrService:
         except requests.RequestException as e:
             print(f"Error deleting TV show from Sonarr: {str(e)}")
             raise
+
+    def find_show_by_title(self, title: str) -> Optional[Dict]:
+        """Find a show in Sonarr by its title
+
+        Args:
+            title: The show title to search for
+
+        Returns:
+            Show information or None if not found
+        """
+        try:
+            # Get all shows from Sonarr
+            response = requests.get(
+                f"{self.base_url}/api/v3/series", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            shows = response.json()
+
+            # Find matching show (case-insensitive)
+            for show in shows:
+                if show['title'].lower() == title.lower():
+                    return show
+
+            # If no exact match, try partial match
+            for show in shows:
+                if title.lower() in show['title'].lower():
+                    return show
+
+            return None
+        except requests.RequestException as e:
+            print(f"Error searching for show in Sonarr: {str(e)}")
+            return None
+
+    def get_episodes_by_series_id(self, series_id: int) -> List[Dict]:
+        """Get all episodes for a specific series
+
+        Args:
+            series_id: Sonarr series ID
+
+        Returns:
+            List of episode information
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v3/episode?seriesId={series_id}", 
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Error getting episodes from Sonarr: {str(e)}")
+            return []
+
+    def find_episode(self, series_id: int, season_number: int, episode_number: int) -> Optional[Dict]:
+        """Find a specific episode by series ID, season and episode number
+
+        Args:
+            series_id: Sonarr series ID
+            season_number: Season number
+            episode_number: Episode number
+
+        Returns:
+            Episode information or None if not found
+        """
+        try:
+            episodes = self.get_episodes_by_series_id(series_id)
+            for episode in episodes:
+                if (episode.get('seasonNumber') == season_number and 
+                    episode.get('episodeNumber') == episode_number):
+                    return episode
+            return None
+        except Exception as e:
+            print(f"Error finding episode: {str(e)}")
+            return None
+
+    def request_episode_download(self, series_id: int, season_number: int, episode_number: int) -> bool:
+        """Request download for a specific episode
+
+        Args:
+            series_id: Sonarr series ID
+            season_number: Season number
+            episode_number: Episode number
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # First find the episode to get its ID
+            episode = self.find_episode(series_id, season_number, episode_number)
+            if not episode:
+                print(f"Episode S{season_number:02d}E{episode_number:02d} not found for series ID {series_id}")
+                return False
+
+            episode_id = episode.get('id')
+
+            # Request a search for this episode
+            response = requests.post(
+                f"{self.base_url}/api/v3/command", 
+                headers=self.headers,
+                json={"name": "EpisodeSearch", "episodeIds": [episode_id]}
+            )
+            response.raise_for_status()
+
+            # Also set the episode to monitored if it isn't already
+            if not episode.get('monitored', False):
+                episode['monitored'] = True
+                update_response = requests.put(
+                    f"{self.base_url}/api/v3/episode/{episode_id}",
+                    headers=self.headers,
+                    json=episode
+                )
+                update_response.raise_for_status()
+
+            return True
+        except Exception as e:
+            print(f"Error requesting episode download: {str(e)}")
+            return False
+
+    def search_episode(self, episode_id: int) -> bool:
+        """Request a search for a specific episode
+
+        Args:
+            episode_id: Sonarr episode ID to search for
+
+        Returns:
+            True if search was initiated successfully
+        """
+        try:
+            data = {"episodeIds": [episode_id]}
+            response = requests.post(
+                f"{self.base_url}/api/v3/command", 
+                headers=self.headers,
+                json={"name": "EpisodeSearch", "episodeIds": [episode_id]}
+            )
+            response.raise_for_status()
+            return True
+        except requests.RequestException as e:
+            print(f"Error initiating episode search in Sonarr: {str(e)}")
+            return False
+
+
+    def search_season_episodes(self, series_id: int, season_number: int) -> bool:
+        """Request a search for all episodes in a specific season
+
+        Args:
+            series_id: Sonarr series ID
+            season_number: Season number to search for
+
+        Returns:
+            True if search was initiated successfully
+        """
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/v3/command", 
+                headers=self.headers,
+                json={"name": "SeasonSearch", "seriesId": series_id, "seasonNumber": season_number}
+            )
+            response.raise_for_status()
+            return True
+        except requests.RequestException as e:
+            print(f"Error initiating season search in Sonarr: {str(e)}")
+            return False
+

@@ -511,3 +511,91 @@ class PlexService:
             return plex_movie.lastViewedAt.replace(tzinfo=None)
         except (AttributeError, TypeError):
             return None
+
+    def get_next_episodes(self, show_id: str = None, count: int = 1) -> Dict[str, List]:
+        """Get next episodes to download for shows that are being watched
+
+        Args:
+            show_id: Optional Plex ID of the show to get next episodes for (all shows if None)
+            count: Number of next episodes to suggest for each show
+
+        Returns:
+            Dict with show titles as keys and lists of next episodes as values
+        """
+        results = {}
+
+        try:
+            # Find all show library sections
+            show_sections = [section for section in self.server.library.sections() if section.type == 'show']
+
+            if not show_sections:
+                print("No TV show libraries found in Plex")
+                return results
+
+            # Get the specific show if ID provided, otherwise process all shows
+            for section in show_sections:
+                shows = [section.fetchItem(show_id)] if show_id else section.all()
+
+                for plex_show in shows:
+                    if not plex_show:
+                        continue
+
+                    # Skip shows that have no episodes or no watched episodes
+                    episodes = plex_show.episodes()
+                    if not episodes or not any(ep.isWatched for ep in episodes):
+                        continue
+
+                    # Find the most recently watched episode
+                    watched_episodes = sorted(
+                        [ep for ep in episodes if ep.isWatched],
+                        key=lambda ep: ep.lastViewedAt if hasattr(ep, 'lastViewedAt') and ep.lastViewedAt else datetime.min,
+                        reverse=True
+                    )
+
+                    if not watched_episodes:
+                        continue
+
+                    latest_watched = watched_episodes[0]
+
+                    # Find next episodes after the most recently watched one
+                    next_episodes = []
+
+                    # First check episodes in the same season
+                    same_season_episodes = sorted(
+                        [ep for ep in episodes 
+                         if ep.seasonNumber == latest_watched.seasonNumber and ep.index > latest_watched.index],
+                        key=lambda ep: ep.index
+                    )
+
+                    next_episodes.extend(same_season_episodes[:count])
+
+                    # If we don't have enough episodes, check the next season(s)
+                    if len(next_episodes) < count:
+                        later_season_episodes = sorted(
+                            [ep for ep in episodes 
+                             if ep.seasonNumber > latest_watched.seasonNumber],
+                            key=lambda ep: (ep.seasonNumber, ep.index)
+                        )
+
+                        next_episodes.extend(later_season_episodes[:count - len(next_episodes)])
+
+                    # If we found any next episodes, add them to the results
+                    if next_episodes:
+                        next_episodes_info = []
+                        for ep in next_episodes:
+                            next_episodes_info.append({
+                                'title': ep.title,
+                                'season': ep.seasonNumber,
+                                'episode': ep.index,
+                                'key': ep.key,
+                                'year': ep.year if hasattr(ep, 'year') else None,
+                                'summary': ep.summary if hasattr(ep, 'summary') else None
+                            })
+
+                        results[plex_show.title] = next_episodes_info
+
+            return results
+
+        except Exception as e:
+            print(f"Error getting next episodes: {str(e)}")
+            return results
