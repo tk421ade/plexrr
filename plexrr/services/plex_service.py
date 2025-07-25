@@ -126,7 +126,7 @@ class PlexService:
                         status = WatchStatus.WATCHED
                         watch_date = self._get_last_watched_date(plex_show)
                         progress_date = None
-                    elif hasattr(plex_show, 'viewOffset') and plex_show.viewOffset > 0:
+                    elif hasattr(plex_show, 'viewedLeafCount') and plex_show.viewedLeafCount > 0:
                         status = WatchStatus.IN_PROGRESS
                         watch_date = None
                         progress_date = self._get_last_viewed_date(plex_show)

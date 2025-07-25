@@ -1,6 +1,7 @@
 from typing import List
 from ..models.tvshow import TVShow
-from ..models.movie import Availability
+from ..models.movie import Availability, WatchStatus
+from .utils import normalize_title
 
 def _generate_show_key(show: TVShow) -> str:
     """Generate a unique key for a TV show for merging purposes"""
@@ -71,20 +72,6 @@ def merge_tv_shows(plex_shows: List[TVShow], sonarr_shows: List[TVShow],
             merged_shows[key] = show
 
     return list(merged_shows.values())
-
-def _generate_show_key(show: TVShow) -> str:
-    """Generate a unique key for a TV show to use in merging"""
-    # Try to use external IDs first for better matching
-    if show.tvdb_id:
-        return f"tvdb_{show.tvdb_id}"
-    elif show.imdb_id:
-        return f"imdb_{show.imdb_id}"
-    else:
-        # Fallback to title-based matching
-        return f"title_{show.title.lower()}"
-from typing import List, Dict, Optional
-from ..models.tvshow import TVShow
-from ..models.movie import Availability, WatchStatus
 
 def merge_tv_shows(plex_shows: List[TVShow], sonarr_shows: List[TVShow], watchlist_shows: List[TVShow]) -> List[TVShow]:
     """Merge TV shows from Plex, Sonarr, and Watchlist
@@ -178,25 +165,3 @@ def merge_tv_shows(plex_shows: List[TVShow], sonarr_shows: List[TVShow], watchli
     all_shows.update(merged_by_title.values())
 
     return list(all_shows)
-
-def normalize_title(title: str) -> str:
-    """Normalize a title for better matching
-
-    Args:
-        title: The original title
-
-    Returns:
-        Normalized title for matching
-    """
-    import re
-    # Convert to lowercase
-    normalized = title.lower()
-    # Remove special characters
-    normalized = re.sub(r'[^a-z0-9\s]', '', normalized)
-    # Remove extra spaces
-    normalized = re.sub(r'\s+', ' ', normalized).strip()
-    # Remove common articles at the beginning
-    for article in ['the ', 'a ', 'an ']:
-        if normalized.startswith(article):
-            normalized = normalized[len(article):]
-    return normalized

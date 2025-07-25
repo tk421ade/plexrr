@@ -128,3 +128,23 @@ class TVShow:
         # Include disk space usage along with episode and season counts
         disk_space = self.get_formatted_size()
         return f"{self.episode_count} eps, {self.season_count} seasons, {disk_space}"
+
+    def update_watch_status(self, watched_episodes: int, total_episodes: int) -> None:
+        """Update watch status based on episode watch counts
+
+        For TV shows, status should be:
+        - 'In Progress' if some episodes are watched and at least one is Not Watched
+        - 'Watched' if all episodes are watched
+        - 'Not Watched' if no episodes are watched
+
+        Args:
+            watched_episodes: Number of watched episodes
+            total_episodes: Total number of episodes
+        """
+        if watched_episodes == 0:
+            self.watch_status = WatchStatus.NOT_WATCHED
+        elif watched_episodes == total_episodes:
+            self.watch_status = WatchStatus.WATCHED
+        else:
+            # Some episodes are watched but not all
+            self.watch_status = WatchStatus.IN_PROGRESS
