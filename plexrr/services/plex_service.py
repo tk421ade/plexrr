@@ -504,14 +504,6 @@ class PlexService:
         except (AttributeError, TypeError):
             return None
 
-    def _get_last_viewed_date(self, plex_movie) -> Optional[datetime]:
-        """Get the date when a movie was last viewed (for in-progress movies)"""
-        try:
-            # Use timezone-naive datetime for consistency
-            return plex_movie.lastViewedAt.replace(tzinfo=None)
-        except (AttributeError, TypeError):
-            return None
-
     def get_next_episodes(self, show_id: str = None, count: int = 1) -> Dict[str, List]:
         """Get next episodes to download for shows that are being watched
 
@@ -545,54 +537,136 @@ class PlexService:
                     if not episodes or not any(ep.isWatched for ep in episodes):
                         continue
 
-                    # Find the most recently watched episode
-                    watched_episodes = sorted(
-                        [ep for ep in episodes if ep.isWatched],
-                        key=lambda ep: ep.lastViewedAt if hasattr(ep, 'lastViewedAt') and ep.lastViewedAt else datetime.min,
-                        reverse=True
-                    )
+                    # Get all episodes that are available in Plex
+                    available_episodes = set((ep.seasonNumber, ep.index) for ep in episodes)
 
-                    if not watched_episodes:
-                        continue
+                    # Find episodes that are in progress (partially watched)
+                    in_progress_episodes = [ep for ep in episodes if hasattr(ep, 'viewOffset') and ep.viewOffset > 0]
 
-                    latest_watched = watched_episodes[0]
-
-                    # Find next episodes after the most recently watched one
-                    next_episodes = []
-
-                    # First check episodes in the same season
-                    same_season_episodes = sorted(
-                        [ep for ep in episodes 
-                         if ep.seasonNumber == latest_watched.seasonNumber and ep.index > latest_watched.index],
-                        key=lambda ep: ep.index
-                    )
-
-                    next_episodes.extend(same_season_episodes[:count])
-
-                    # If we don't have enough episodes, check the next season(s)
-                    if len(next_episodes) < count:
-                        later_season_episodes = sorted(
-                            [ep for ep in episodes 
-                             if ep.seasonNumber > latest_watched.seasonNumber],
-                            key=lambda ep: (ep.seasonNumber, ep.index)
+                    # If there are episodes in progress, use those as starting points
+                    if in_progress_episodes:
+                        # Sort by season and episode to prioritize earlier episodes
+                        in_progress_episodes.sort(key=lambda ep: (ep.seasonNumber, ep.index))
+                        reference_episode = in_progress_episodes[0]
+                    else:
+                        # Otherwise use the most recently watched episode
+                        watched_episodes = sorted(
+                            [ep for ep in episodes if ep.isWatched],
+                            key=lambda ep: ep.lastViewedAt if hasattr(ep, 'lastViewedAt') and ep.lastViewedAt else datetime.min,
+                            reverse=True
                         )
+                        if not watched_episodes:
+                            continue
+                        reference_episode = watched_episodes[0]
 
-                        next_episodes.extend(later_season_episodes[:count - len(next_episodes)])
+                    # Collect all episodes that follow our reference episode
+                    # We'll check both the same season and subsequent seasons
+                    all_following_episodes = []
 
-                    # If we found any next episodes, add them to the results
-                    if next_episodes:
-                        next_episodes_info = []
-                        for ep in next_episodes:
-                            next_episodes_info.append({
-                                'title': ep.title,
-                                'season': ep.seasonNumber,
-                                'episode': ep.index,
-                                'key': ep.key,
-                                'year': ep.year if hasattr(ep, 'year') else None,
-                                'summary': ep.summary if hasattr(ep, 'summary') else None
-                            })
+                    # Episodes in the same season with higher episode numbers
+                    all_following_episodes.extend([
+                        (ep.seasonNumber, ep.index, ep)
+                        for ep in episodes
+                        if ep.seasonNumber == reference_episode.seasonNumber and ep.index > reference_episode.index
+                    ])
 
-                        results[plex_show.title] = next_episodes_info
+                    # Episodes in later seasons
+                    all_following_episodes.extend([
+                        (ep.seasonNumber, ep.index, ep)
+                        for ep in episodes
+                        if ep.seasonNumber > reference_episode.seasonNumber
+                    ])
+
+                    # Sort all episodes chronologically
+                    all_following_episodes.sort()
+
+                    # Now find up to 'count' episodes that we need to download
+                    # These must not already be available in Plex (we'll infer this from episodes list)
+                    missing_episodes = []
+
+                    # Find the next episodes that should exist but are missing from Plex
+                    current_season = reference_episode.seasonNumber
+                    current_episode = reference_episode.index
+                    episodes_to_check = sorted(all_following_episodes, key=lambda x: (x[0], x[1]))
+
+                    for season_num, episode_num, _ in episodes_to_check:
+                        # Check for gaps in episode numbering within the same season
+                        if season_num == current_season:
+                            # Check for all episodes between current_episode+1 and episode_num
+                            for ep_num in range(current_episode + 1, episode_num):
+                                # If this episode doesn't exist in Plex, it should be downloaded
+                                if (season_num, ep_num) not in available_episodes:
+                                    missing_episodes.append({
+                                        'title': f"Episode {ep_num}",  # We don't know the title
+                                        'season': season_num,
+                                        'episode': ep_num,
+                                        'key': None,
+                                        'year': None,
+                                        'summary': "Missing episode"
+                                    })
+                                    if len(missing_episodes) >= count:
+                                        break
+                        # When we switch to a new season, check starting from episode 1
+                        elif season_num > current_season:
+                            # Start checking from episode 1 of the new season
+                            for ep_num in range(1, episode_num):
+                                if (season_num, ep_num) not in available_episodes:
+                                    missing_episodes.append({
+                                        'title': f"Episode {ep_num}",
+                                        'season': season_num,
+                                        'episode': ep_num,
+                                        'key': None,
+                                        'year': None,
+                                        'summary': "Missing episode"
+                                    })
+                                    if len(missing_episodes) >= count:
+                                        break
+
+                        if len(missing_episodes) >= count:
+                            break
+
+                        # Update current position
+                        current_season = season_num
+                        current_episode = episode_num
+
+                    # If we still need more episodes, look beyond what's in the library
+                    if len(missing_episodes) < count:
+                        # The next episode would be right after the last one we found
+                        if episodes_to_check:
+                            last_season, last_episode, _ = episodes_to_check[-1]
+                            next_episode = last_episode + 1
+                            remaining_count = count - len(missing_episodes)
+
+                            for i in range(remaining_count):
+                                if (last_season, next_episode + i) not in available_episodes:
+                                    missing_episodes.append({
+                                        'title': f"Episode {next_episode + i}",
+                                        'season': last_season,
+                                        'episode': next_episode + i,
+                                        'key': None,
+                                        'year': None,
+                                        'summary': "Next episode"
+                                    })
+                        else:
+                            # If no episodes follow, suggest the next episode after reference_episode
+                            next_season = reference_episode.seasonNumber
+                            next_episode = reference_episode.index + 1
+                            remaining_count = count - len(missing_episodes)
+
+                            for i in range(remaining_count):
+                                if (next_season, next_episode + i) not in available_episodes:
+                                    missing_episodes.append({
+                                        'title': f"Episode {next_episode + i}",
+                                        'season': next_season,
+                                        'episode': next_episode + i,
+                                        'key': None,
+                                        'year': None,
+                                        'summary': "Next episode"
+                                    })
+
+                    # If we found any missing episodes, add them to the results
+                    if missing_episodes:
+                        results[plex_show.title] = missing_episodes[:count]
 
             return results
 

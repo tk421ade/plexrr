@@ -9,20 +9,22 @@ from ..utils.config_loader import get_config
 @click.command(name='download-next')
 @click.option('--show-id', help='Optional Plex ID of the show to get next episodes for (all shows if not specified)')
 @click.option('--count', type=int, default=1, help='Number of next episodes to download for each show')
-@click.option('--request', is_flag=True, help='Request downloads in Sonarr for the next episodes')
-@click.option('--quality-profile', type=int, help='Quality profile ID to use when adding shows to Sonarr')
-@click.option('--confirm', is_flag=True, help='Prompt for confirmation before requesting downloads')
+@click.option('--quality-profile', type=int, help='Quality profile ID to use when requesting downloads')
+@click.option('--confirm', is_flag=True, help='Request downloads in Sonarr with confirmation')
 @click.option('--verbose', is_flag=True, help='Enable verbose debug output')
-def download_next_episodes(show_id, count, request, quality_profile, confirm, verbose):
-    """Find next episodes to download for shows you're watching.
+def download_next_episodes(show_id, count, quality_profile, confirm, verbose):
+    """Find and suggest next episodes to download for shows you're watching.
 
-    This command will analyze your Plex library to find shows you've been watching
-    and suggest the next episodes to download. By default, it suggests 1 episode
-    per show, but you can specify more with the --count option.
+    This command analyzes your Plex library to find shows you've been watching and
+    suggests the next episodes to download. It will prioritize shows that are in progress
+    and only suggest episodes that are not already available in your Plex library.
+
+    By default, it suggests the specified number of episodes (--count) that follow
+    episodes you've watched or that are in progress for each show. The command will
+    display what will be downloaded by default, and only proceed to request the
+    downloads to Sonarr when --confirm flag is used along with a --quality-profile.
 
     If a show ID is provided, only that specific show will be analyzed.
-
-    Use the --request flag to automatically request downloads through Sonarr.
     """
     try:
         # Configure logging based on verbose flag
@@ -39,16 +41,19 @@ def download_next_episodes(show_id, count, request, quality_profile, confirm, ve
         click.echo("Initializing Plex service...")
         plex_service = PlexService(config['plex'])
 
-        # Initialize Sonarr service if we're requesting downloads
+        # Initialize Sonarr service (we'll need it if confirm is provided)
         sonarr_service = None
-        if request:
+        if confirm:
             if 'sonarr' not in config:
                 click.echo("Error: Sonarr configuration not found. Add sonarr section to your config.yml", err=True)
+                return
+            if not quality_profile:
+                click.echo("Error: --quality-profile is required when using --confirm", err=True)
                 return
             click.echo("Initializing Sonarr service...")
             sonarr_service = SonarrService(config['sonarr'])
 
-        # Get next episodes
+        # Get next episodes to download
         click.echo(f"Finding next episodes to download (max {count} per show)...")
         next_episodes = plex_service.get_next_episodes(show_id, count)
 
@@ -76,67 +81,61 @@ def download_next_episodes(show_id, count, request, quality_profile, confirm, ve
                         summary = summary[:97] + '...'
                     click.echo(f"     {summary}")
 
-                # Request download if enabled
-                if request and sonarr_service:
-                    # Check if we should confirm this download
-                    proceed = True
-                    if confirm:
-                        proceed = click.confirm(f"    Request download for {episode_info}?")
+                # Request download if confirm is enabled and we have a quality profile
+                if confirm and sonarr_service and quality_profile:
+                    # Find the show in Sonarr
+                    sonarr_show = sonarr_service.find_show_by_title(show_title)
 
-                    if proceed:
-                        # Find the show in Sonarr
-                        sonarr_show = sonarr_service.find_show_by_title(show_title)
+                    # If the show doesn't exist in Sonarr, add it
+                    if not sonarr_show:
+                        click.echo(f"    Adding {show_title} to Sonarr...")
+                        try:
+                            from ..models.tvshow import TVShow
+                            from ..models.movie import Availability
 
-                        # If the show doesn't exist in Sonarr and we have a quality profile, add it
-                        if not sonarr_show and quality_profile:
-                            click.echo(f"    Adding {show_title} to Sonarr...")
-                            try:
-                                from ..models.tvshow import TVShow
-                                from ..models.movie import Availability
-
-                                # Create a basic TVShow object with just the title
-                                show_to_add = TVShow(
-                                    title=show_title,
-                                    availability=Availability.PLEX
-                                )
-
-                                # Add the show to Sonarr
-                                sonarr_show = sonarr_service.add_show(show_to_add, quality_profile)
-                            except Exception as e:
-                                click.echo(f"    Error adding show to Sonarr: {str(e)}")
-                                continue
-
-                        # If we have the show in Sonarr, request the episode download
-                        if sonarr_show:
-                            series_id = sonarr_show.get('id') if isinstance(sonarr_show, dict) else sonarr_show.id
-                            click.echo(f"    Requesting download for {episode_info}...")
-                            success = sonarr_service.request_episode_download(
-                                series_id, 
-                                episode['season'], 
-                                episode['episode']
+                            # Create a basic TVShow object with just the title
+                            show_to_add = TVShow(
+                                title=show_title,
+                                availability=Availability.PLEX
                             )
 
-                            if success:
-                                click.echo(f"    Download requested successfully")
-                                download_requested += 1
-                            else:
-                                click.echo(f"    Failed to request download")
-                                download_failed += 1
-                        else:
-                            click.echo(f"    Show not found in Sonarr and could not be added")
+                            # Add the show to Sonarr
+                            sonarr_show = sonarr_service.add_show(show_to_add, quality_profile)
+                        except Exception as e:
+                            click.echo(f"    Error adding show to Sonarr: {str(e)}")
                             download_failed += 1
+                            continue
+
+                    # If we have the show in Sonarr, request the episode download
+                    if sonarr_show:
+                        series_id = sonarr_show.get('id') if isinstance(sonarr_show, dict) else sonarr_show.id
+                        click.echo(f"    Requesting download for {episode_info}...")
+                        success = sonarr_service.request_episode_download(
+                            series_id, 
+                            episode['season'], 
+                            episode['episode']
+                        )
+
+                        if success:
+                            click.echo(f"    Download requested successfully")
+                            download_requested += 1
+                        else:
+                            click.echo(f"    Failed to request download")
+                            download_failed += 1
+                    else:
+                        click.echo(f"    Show not found in Sonarr and could not be added")
+                        download_failed += 1
 
         # Show download summary if we requested any
-        if request and sonarr_service:
+        if confirm and sonarr_service and quality_profile:
             click.echo(f"\nDownload summary:")
             click.echo(f"- {download_requested} episodes requested successfully")
             if download_failed > 0:
                 click.echo(f"- {download_failed} episodes failed")
         else:
-            # Add instructions for integrating with download systems
-            click.echo("\nTo download these episodes, you can:")
-            click.echo("1. Run this command with --request to download through Sonarr")
-            click.echo("2. Manually search for them in your preferred download client")
+            # Add instructions for actually downloading the episodes
+            click.echo("\nTo request these downloads in Sonarr:")
+            click.echo(f"  Run this command with --confirm --quality-profile <ID>")
 
         if verbose:
             logger.debug("Next episodes search completed successfully")
