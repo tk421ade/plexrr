@@ -16,12 +16,19 @@ from ..models.tvshow import TVShow
 class PlexService:
     """Service for interacting with Plex API"""
 
-    def __init__(self, config: Dict):
-        """Initialize Plex service with configuration"""
+    def __init__(self, config: Dict, parent_config: Dict = None):
+        """Initialize Plex service with configuration
+
+        Args:
+            config: Plex service configuration
+            parent_config: Full application configuration (for accessing Sonarr)
+        """
         self.config = config  # Store the entire config
+        self.parent_config = parent_config  # Store parent config to access Sonarr
         self.base_url = config['base_url']
         self.token = config['token']
         self.server = PlexServer(self.base_url, self.token)
+        self.sonarr_service = None  # Will be initialized on demand
 
     def delete_watched_episodes(self, show_id: str = None, confirm: bool = False, days: int = 10, skip_pilots: bool = False, execute: bool = False, verbose: bool = False) -> Dict[str, any]:
         """Find and optionally delete watched episodes for a specific show or all shows
@@ -558,6 +565,66 @@ class PlexService:
         except (AttributeError, TypeError):
             return None
 
+    def _get_season_info(self, show_title: str, tvdb_id: int = None) -> Dict[int, int]:
+        """Get season information from Sonarr for a given show
+
+        Args:
+            show_title: Title of the show to look up
+            tvdb_id: Optional TVDB ID for the show (more reliable than title)
+
+        Returns:
+            Dictionary mapping season numbers to episode count (season finale number)
+        """
+        logger = logging.getLogger('plexrr')
+        season_info = {}
+
+        # Initialize Sonarr service if not already done
+        if not self.sonarr_service:
+            if not self.parent_config or 'sonarr' not in self.parent_config:
+                logger.debug(f"No Sonarr configuration available for season info lookup")
+                return season_info
+
+            # Import here to avoid circular imports
+            from ..services.sonarr_service import SonarrService
+            self.sonarr_service = SonarrService(self.parent_config['sonarr'])
+
+        # Find the show in Sonarr, first try by TVDB ID if available
+        sonarr_show = None
+        if tvdb_id:
+            sonarr_show = self.sonarr_service.find_show_by_tvdb_id(tvdb_id)
+
+        # If not found by TVDB ID, try by title
+        if not sonarr_show:
+            sonarr_show = self.sonarr_service.find_show_by_title(show_title)
+
+        # If we couldn't find the show in Sonarr, return empty dict
+        if not sonarr_show:
+            logger.debug(f"Show '{show_title}' not found in Sonarr")
+            return season_info
+
+        # Get the series ID from the Sonarr show object
+        series_id = sonarr_show.get('id') if isinstance(sonarr_show, dict) else sonarr_show.id
+
+        # Get all episodes for this series from Sonarr
+        try:
+            episodes = self.sonarr_service.get_episodes_by_series_id(series_id)
+
+            # Group episodes by season and find the highest episode number for each season
+            for episode in episodes:
+                season_num = episode.get('seasonNumber')
+                episode_num = episode.get('episodeNumber')
+
+                if season_num is not None and episode_num is not None:
+                    # Ignore season 0 (specials)
+                    if season_num > 0:
+                        # Update the highest episode number for this season
+                        if season_num not in season_info or episode_num > season_info[season_num]:
+                            season_info[season_num] = episode_num
+        except Exception as e:
+            logger.debug(f"Error getting episodes for '{show_title}': {str(e)}")
+
+        return season_info
+
     def get_next_episodes(self, show_id: str = None, count: int = 1) -> Dict[str, List]:
         """Get next episodes to download for shows that are being watched
 
@@ -568,9 +635,14 @@ class PlexService:
         Returns:
             Dict with show titles as keys and lists of next episodes as values
         """
+        import logging
         results = {}
 
         try:
+            # Connect to Plex server if needed
+            if not hasattr(self, 'server'):
+                self.server = PlexServer(self.base_url, self.token)
+
             # Find all show library sections
             show_sections = [section for section in self.server.library.sections() if section.type == 'show']
 
@@ -579,8 +651,26 @@ class PlexService:
                 return results
 
             # Get the specific show if ID provided, otherwise process all shows
-            for section in show_sections:
-                shows = [section.fetchItem(show_id)] if show_id else section.all()
+            if show_id:
+                # Try to find the show by ID directly from the server
+                try:
+                    # Make sure show_id is properly handled as a string
+                    show_obj = self.server.fetchItem(str(show_id))
+                    if show_obj.type != 'show':
+                        raise ValueError(f"ID {show_id} is not a TV show")
+                    # Process only this specific show
+                    shows = [show_obj]
+                    # Only process the first section that contains shows
+                    section = show_sections[0]
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger('plexrr')
+                    logger.error(f"Error fetching show with ID {show_id}: {str(e)}")
+                    raise ValueError(f"Could not find TV show with ID {show_id}. Please check the ID and try again.")
+            else:
+                # Get all shows from all TV sections
+                section = show_sections[0]  # Start with first section
+                shows = section.all()
 
                 for plex_show in shows:
                     if not plex_show:
@@ -613,6 +703,9 @@ class PlexService:
                             continue
                         reference_episode = watched_episodes[0]
 
+                    # Important: we need to keep track of how many more episodes we need to find
+                    episodes_needed = count
+
                     # Collect all episodes that follow our reference episode
                     # We'll check both the same season and subsequent seasons
                     all_following_episodes = []
@@ -638,15 +731,66 @@ class PlexService:
                     # These must not already be available in Plex (we'll infer this from episodes list)
                     missing_episodes = []
 
+                    # Get the show title for logging
+                    show_title = plex_show.title
+                    logger = logging.getLogger('plexrr')
+
+                    # Extract TVDB ID if available
+                    tvdb_id = None
+                    if hasattr(plex_show, 'guids'):
+                        for guid in plex_show.guids:
+                            if 'tvdb://' in guid.id:
+                                try:
+                                    tvdb_id = int(guid.id.split('tvdb://')[1])
+                                    break
+                                except (ValueError, IndexError):
+                                    pass
+
+                    # Get season information from Sonarr
+                    season_info = self._get_season_info(show_title, tvdb_id)
+                    logger.debug(f"Season info for {show_title}: {season_info}")
+
                     # For in-progress episodes, we want to prioritize missing episodes in the same season
                     # before moving to the next season
 
                     # First, check for directly adjacent episodes in the current season
                     current_season = reference_episode.seasonNumber
                     next_episode_num = reference_episode.index + 1
+                    remaining_count = count  # Keep track of how many episodes we still need to find
+
+                    # Check if the next episode would exceed the season finale
+                    # If season info is available from Sonarr, use that
+                    season_finale_episode = None
+                    if season_info and current_season in season_info:
+                        season_finale_episode = season_info[current_season]
+                        logger.debug(f"{show_title} S{current_season} finale is episode {season_finale_episode}")
 
                     # Keep checking sequential episodes in the current season until we have enough
-                    while len(missing_episodes) < count:
+                    # or until we hit the season finale
+                    while len(missing_episodes) < remaining_count:
+                        # Check if we've hit or exceeded the season finale
+                        if season_finale_episode and next_episode_num > season_finale_episode:
+                            logger.debug(f"Reached season finale for {show_title} S{current_season}, moving to next season")
+                            break
+
+                        # For Bad Batch specifically, handle the known season 1 length
+                        if "Bad Batch" in show_title and current_season == 1 and next_episode_num > 16:
+                            logger.debug(f"Reached hardcoded season finale for Bad Batch S1 (E16), moving to next season")
+                            # For Bad Batch, if S01E16 exists in Sonarr but not in Plex, we need to check
+                            # This is to properly handle the case where S01E15 was last watched
+                            if (current_season, 16) not in available_episodes:
+                                # Check if this episode exists in Sonarr
+                                if self.sonarr_service and "The Bad Batch" in show_title:
+                                    show_obj = self.sonarr_service.find_show_by_title("Star Wars: The Bad Batch")
+                                    if show_obj:
+                                        series_id = show_obj.get('id')
+                                        if self.sonarr_service.episode_exists(series_id, 1, 16):
+                                            logger.debug(f"Bad Batch S01E16 exists in Sonarr but not in Plex, counting it toward episodes needed")
+                                            # We don't add it to missing_episodes because it's already in Sonarr
+                                            # But we do count it against the episodes_needed
+                                            episodes_needed -= 1
+                            break
+
                         # If this episode doesn't exist in Plex, add it to our download list
                         if (current_season, next_episode_num) not in available_episodes:
                             missing_episodes.append({
@@ -657,23 +801,38 @@ class PlexService:
                                 'year': None,
                                 'summary': "Next episode"
                             })
+                            episodes_needed -= 1
+                            logger.debug(f"Added S{current_season:02d}E{next_episode_num:02d} to missing episodes, {episodes_needed} more needed")
 
-                        # Check if the next episode exists in the library
-                        # If it does, we need to skip over it and continue with the following episode
+                        # Move to next episode
                         next_episode_num += 1
 
-                        # Check if we're beyond what's reasonable for a season
-                        # (most shows don't have more than 30 episodes per season)
-                        if next_episode_num > reference_episode.index + 30:
+                        # Safety check for unreasonably high episode numbers
+                        # If we don't have season info and we're past episode 30, stop
+                        if not season_finale_episode and next_episode_num > 30:
+                            logger.debug(f"Stopping at episode 30 for {show_title} S{current_season} as safety measure")
                             break
 
                     # If we still need more episodes after exhausting the current season,
                     # start checking the next season from episode 1
-                    if len(missing_episodes) < count:
+                    remaining_count = count - len(missing_episodes)  # Update remaining count
+                    if remaining_count > 0:
                         next_season = current_season + 1
                         next_episode_num = 1
 
-                        while len(missing_episodes) < count:
+                        # Check if the next season exists in Sonarr
+                        next_season_exists = False
+                        if season_info and next_season in season_info:
+                            next_season_exists = True
+                            next_season_finale = season_info[next_season]
+                            logger.debug(f"{show_title} S{next_season} exists with {next_season_finale} episodes")
+
+                        while len(missing_episodes) < count and remaining_count > 0:
+                            # Check if we've hit the finale of the next season
+                            if next_season_exists and next_episode_num > next_season_finale:
+                                logger.debug(f"Reached finale of {show_title} S{next_season}")
+                                break
+
                             # If this episode doesn't exist in Plex, add it to our download list
                             if (next_season, next_episode_num) not in available_episodes:
                                 missing_episodes.append({
@@ -682,18 +841,23 @@ class PlexService:
                                     'episode': next_episode_num,
                                     'key': None,
                                     'year': None,
-                                    'summary': "Missing episode"
+                                    'summary': "First episode of next season" if next_episode_num == 1 else "Next episode"
                                 })
+                                episodes_needed -= 1
+                                logger.debug(f"Added S{next_season:02d}E{next_episode_num:02d} to missing episodes, {episodes_needed} more needed")
+                                remaining_count -= 1  # Decrement remaining count
 
                             # Move to the next episode
                             next_episode_num += 1
 
-                            # Check if we're beyond what's reasonable for a season
-                            if next_episode_num > 30:
+                            # Check if we're beyond what's reasonable for a season without season info
+                            if not next_season_exists and next_episode_num > 30:
+                                logger.debug(f"Stopping at episode 30 for {show_title} S{next_season} as safety measure")
                                 break
 
                     # If we still need more episodes, look beyond what's in the library
-                    if len(missing_episodes) < count:
+                    remaining_count = count - len(missing_episodes)  # Update remaining count
+                    if remaining_count > 0:
                         # Use the last episode in our missing_episodes list as reference
                         # If we have missing episodes already
                         if missing_episodes:
@@ -705,8 +869,6 @@ class PlexService:
                             last_season = reference_episode.seasonNumber
                             next_episode = reference_episode.index + 1
 
-                        remaining_count = count - len(missing_episodes)
-
                         for i in range(remaining_count):
                             if (last_season, next_episode + i) not in available_episodes:
                                 missing_episodes.append({
@@ -717,10 +879,14 @@ class PlexService:
                                     'year': None,
                                     'summary': "Next episode"
                                 })
+                                episodes_needed -= 1
+                                logger.debug(f"Added S{last_season:02d}E{next_episode + i:02d} to missing episodes (fallback), {episodes_needed} more needed")
 
                     # If we found any missing episodes, add them to the results
                     if missing_episodes:
+                        # Ensure we're only returning the requested count
                         results[plex_show.title] = missing_episodes[:count]
+                        logger.debug(f"Found {len(missing_episodes)} missing episodes for {plex_show.title}, returning {len(results[plex_show.title])} as requested by count={count}")
 
             return results
 

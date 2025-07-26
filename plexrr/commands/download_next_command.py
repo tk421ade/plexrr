@@ -7,7 +7,7 @@ from ..services.sonarr_service import SonarrService
 from ..utils.config_loader import get_config
 
 @click.command(name='download-next')
-@click.option('--show-id', help='Optional Plex ID of the show to get next episodes for (all shows if not specified)')
+@click.option('--show-id', type=str, help='Optional Plex ID of the show to get next episodes for (all shows if not specified)')
 @click.option('--count', type=int, default=1, help='Number of next episodes to download for each show')
 @click.option('--quality-profile', type=int, help='Quality profile ID to use when requesting downloads')
 @click.option('--confirm', is_flag=True, help='Request downloads in Sonarr with confirmation')
@@ -35,11 +35,16 @@ def download_next_episodes(show_id, count, quality_profile, confirm, verbose):
         if verbose:
             logger.debug("Verbose mode enabled")
 
+        # Log command parameters for debugging
+        if verbose:
+            logger.debug(f"Parameters: show_id={show_id}, count={count}, quality_profile={quality_profile}, confirm={confirm}")
+
         config = get_config()
 
         # Initialize Plex service
         click.echo("Initializing Plex service...")
-        plex_service = PlexService(config['plex'])
+        # Pass the full config so PlexService can access Sonarr for season data
+        plex_service = PlexService(config['plex'], config)
 
         # Initialize Sonarr service (we'll need it if confirm is provided)
         sonarr_service = None
@@ -55,7 +60,25 @@ def download_next_episodes(show_id, count, quality_profile, confirm, verbose):
 
         # Get next episodes to download
         click.echo(f"Finding next episodes to download (max {count} per show)...")
-        next_episodes = plex_service.get_next_episodes(show_id, count)
+        try:
+            # Ensure show_id is properly handled
+            show_id_param = None
+            if show_id:
+                show_id_param = str(show_id)
+                if verbose:
+                    logger.debug(f"Looking for show with ID: {show_id_param}")
+
+            next_episodes = plex_service.get_next_episodes(show_id_param, count)
+        except ValueError as e:
+            click.echo(f"Error: {str(e)}", err=True)
+            if verbose:
+                logger.debug(f"Detailed error: {str(e)}")
+            return
+        except Exception as e:
+            click.echo(f"Error getting next episodes: {str(e)}", err=True)
+            if verbose:
+                logger.exception("Detailed error information:")
+            return
 
         if not next_episodes:
             click.echo("No next episodes found to download.")
@@ -110,18 +133,27 @@ def download_next_episodes(show_id, count, quality_profile, confirm, verbose):
                     if sonarr_show:
                         series_id = sonarr_show.get('id') if isinstance(sonarr_show, dict) else sonarr_show.id
                         click.echo(f"    Requesting download for {episode_info}...")
-                        success = sonarr_service.request_episode_download(
-                            series_id, 
-                            episode['season'], 
-                            episode['episode']
-                        )
 
-                        if success:
-                            click.echo(f"    Download requested successfully")
+                        # Check if the episode exists first
+                        if sonarr_service.episode_exists(series_id, episode['season'], episode['episode']):
+                            click.echo(f"    Episode already exists in Sonarr, skipping download")
                             download_requested += 1
                         else:
-                            click.echo(f"    Failed to request download")
-                            download_failed += 1
+                            # Request the episode download - the method will automatically try
+                            # the next season's first episode if current season is finished
+                            success = sonarr_service.request_episode_download(
+                                series_id, 
+                                episode['season'], 
+                                episode['episode']
+                            )
+
+                            if success:
+                                click.echo(f"    Download requested successfully")
+                                download_requested += 1
+                            else:
+                                # Try to get the first episode of the next season if this failed
+                                # This message is already logged by the service
+                                download_failed += 1
                     else:
                         click.echo(f"    Show not found in Sonarr and could not be added")
                         download_failed += 1

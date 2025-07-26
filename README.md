@@ -311,8 +311,9 @@ plexrr delete-watched --verbose      # Show detailed debug information
 # Find and suggest next episodes to download for shows you're watching
 plexrr download-next                   # Suggest next episodes to download
 plexrr download-next --count 3         # Suggest 3 next episodes per show (default: 1)
-plexrr download-next --show-id 123     # Only suggest for a specific show
+plexrr download-next --show-id 123     # Only suggest for a specific show (use the Plex rating key/ID number)
 plexrr download-next --confirm --quality-profile 1  # Actually request downloads in Sonarr
+# Note: When the season finale is reached, PlexRR will automatically download the first episode of the next season
 
 # Webhook server for automating actions from Plex events
 plexrr webhook start                        # Start the webhook server as a daemon
