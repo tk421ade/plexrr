@@ -25,3 +25,23 @@ radarr:
   # Your Radarr API key
   # Find this in Radarr under Settings -> General -> Security
   api_key: "your-radarr-api-key-here"
+
+# Webhook configuration for Plex events
+# Each event can have a list of commands to execute
+webhooks:
+  # Event triggered when an episode is marked as watched
+  after-watched:
+    - "download-next --count 2 --execute"
+    - "delete-watched --days 0 --execute"
+
+  # Event triggered when playback starts
+  on-play: []
+
+  # Event triggered when playback stops
+  on-stop: []
+
+  # Event triggered when new content is added to library
+  on-added: []
+
+  # Other available events:
+  # on-pause, on-resume, on-rate, on-deck

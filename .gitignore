@@ -60,6 +60,8 @@ venv.bak/
 
 # Config file with sensitive data
 config.yml
+config.ini
+config.yaml
 
 # Logs
 *.log

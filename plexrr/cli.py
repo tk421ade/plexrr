@@ -8,6 +8,7 @@ from .commands.delete_command import delete_movies
 from .commands.delete_watched_command import delete_watched_episodes
 from .commands.download_next_command import download_next_episodes
 from .commands.config_command import config_group
+from .commands.webhook_command import webhook_group
 
 @click.group()
 def cli():
@@ -23,6 +24,7 @@ cli.add_command(delete_movies)
 cli.add_command(delete_watched_episodes)
 cli.add_command(download_next_episodes)
 cli.add_command(config_group)
+cli.add_command(webhook_group)
 
     # Handle common errors with helpful messages
 @cli.result_callback()

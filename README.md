@@ -10,6 +10,7 @@ A Python command-line tool to manage media across Plex, Radarr, and Sonarr.
 - Track watch status and history
 - See which movies and TV shows are in your Plex Watchlist
 - Manage watched episodes by finding and deleting old content
+- Automate actions using Plex webhooks (e.g., auto-download next episodes when finishing a show)
 
 ## Installation
 
@@ -35,24 +36,31 @@ plexrr config create --path ./config.yml
 
 ```yaml
 plex:
-  base_url: "http://localhost:32400"
-  token: "your-plex-token"
+  base_url: http://localhost:32400
+  token: your-plex-token
 
   # Option 1: Use Plex account credentials for watchlist
-  # username: "your-plex-username"
-  # password: "your-plex-password"
+  # username: your-plex-username
+  # password: your-plex-password
 
   # Option 2: Use RSS feed URL for watchlist (recommended)
-  watchlist_rss: "https://rss.plex.tv/your-unique-watchlist-id"
+  watchlist_rss: https://rss.plex.tv/your-unique-watchlist-id
 
 radarr:
-  base_url: "http://localhost:7878"
-  api_key: "your-radarr-api-key"
+  base_url: http://localhost:7878
+  api_key: your-radarr-api-key
 
 # Optional: Configure Sonarr for TV shows
 sonarr:
-  base_url: "http://localhost:8989"
-  api_key: "your-sonarr-api-key"
+  base_url: http://localhost:8989
+  api_key: your-sonarr-api-key
+
+# Optional: Configure webhooks for automated actions
+webhooks:
+  # Event triggered when an episode is marked as watched
+  after-watched:
+    - download-next --count 2 --execute
+    - delete-watched --days 0 --execute
 ```
 
 3. Validate your configuration:
@@ -60,6 +68,90 @@ sonarr:
 ```bash
 plexrr config validate
 ```
+
+### Webhook Setup
+
+To use the webhook functionality for automating actions based on Plex events:
+
+1. Configure webhook actions in your `config.yml`:
+
+```yaml
+webhooks:
+  after-watched:
+    - download-next --count 2 --execute
+    - delete-watched --days 0 --execute
+```
+
+2. Start the webhook server:
+
+```bash
+plexrr webhook start
+```
+
+3. Configure Plex to send webhooks:
+   - Log in to your Plex account at https://app.plex.tv
+   - Go to Settings → Account
+   - Scroll down to find the "Webhooks" section
+   - Click "Add Webhook"
+   - Enter the URL of your webhook server: `http://YOUR_SERVER_IP:9876/webhook`
+     (Replace YOUR_SERVER_IP with the IP address where plexrr is running)
+   - Click "Save Changes"
+
+   Note: You need a Plex Pass subscription to use webhooks feature in Plex.
+
+   ![Plex Webhook Configuration](https://support.plex.tv/wp-content/uploads/sites/4/2018/02/webhook-1-en.png)
+
+4. Test the webhook is working:
+   - Start the webhook server with debug mode: `plexrr webhook start --foreground --debug`
+   - Play and then finish watching something in Plex
+   - You should see events logged and the configured commands executed
+
+5. For a permanent setup, use the provided systemd service:
+
+```bash
+sudo cp /path/to/plexrr/resources/plexrr-webhook.service /etc/systemd/system/plexrr-webhook@<username>.service
+sudo systemctl daemon-reload
+sudo systemctl enable plexrr-webhook@<username>.service
+sudo systemctl start plexrr-webhook@<username>.service
+```
+
+   The contents of the service file should look like this:
+
+```ini
+[Unit]
+Description=PlexRR Webhook Server for Plex automation
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+ExecStart=/usr/bin/env plexrr webhook start --foreground
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+   Note: The service file uses `/usr/bin/env` to find the plexrr executable automatically, regardless of where pip installed it. If you need to specify the exact path, you can find it by running:
+
+```bash
+which plexrr
+```
+
+5. Monitor the service logs using journalctl:
+
+```bash
+# Follow logs in real-time
+sudo journalctl -u plexrr-webhook@<username>.service -f
+
+# View last 100 log entries
+sudo journalctl -u plexrr-webhook@<username>.service -n 100
+```
+
+See the full documentation in `plexrr/docs/webhooks.md` for more details on available events and advanced configuration.
 
 ### Configuration Details
 
@@ -74,6 +166,26 @@ If you get a configuration error:
 2. Ensure that all servers are running and accessible
 3. Check for typos in URLs and API keys
 4. Make sure the required `radarr` section is present
+
+### Webhook Troubleshooting
+
+If webhooks are not working:
+
+1. Run `plexrr config validate --verbose` to check that your webhook configuration is being loaded correctly
+2. Verify the webhook server is running with `plexrr webhook status`
+3. Check the webhook server logs:
+   - When running in foreground mode: output appears in terminal
+   - When running as systemd service: `sudo journalctl -u plexrr-webhook@<username>.service`
+4. Ensure your server is accessible from the internet (or from your Plex server)
+5. Verify port 9876 is open in your firewall
+6. Confirm you have a Plex Pass subscription (required for webhooks)
+7. Try testing the webhook manually:
+
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"event":"media.scrobble", "Account":{"title":"test"}, "Metadata":{"type":"episode"}}' \
+  http://localhost:9876/webhook
+```
 
 ## Usage
 
@@ -149,6 +261,19 @@ plexrr delete-watched --days 30      # Only process episodes watched more than 3
 plexrr delete-watched --show-id 123  # Only process episodes from a specific show
 plexrr delete-watched --skip-pilots  # Skip the first episode (S01E01) of each series
 plexrr delete-watched --verbose      # Show detailed debug information
+
+# Find and suggest next episodes to download for shows you're watching
+plexrr download-next                   # Suggest next episodes to download
+plexrr download-next --count 3         # Suggest 3 next episodes per show (default: 1)
+plexrr download-next --show-id 123     # Only suggest for a specific show
+plexrr download-next --confirm --quality-profile 1  # Actually request downloads in Sonarr
+
+# Webhook server for automating actions from Plex events
+plexrr webhook start                   # Start the webhook server as a daemon
+plexrr webhook start --foreground      # Start the webhook server in the foreground
+plexrr webhook start --port 9876       # Specify a custom port (default: 9876)
+plexrr webhook stop                    # Stop the webhook server
+plexrr webhook status                  # Check if the webhook server is running
 ```
 
 ## License

@@ -1,0 +1,46 @@
+plex:
+  base_url: http://localhost:32400
+  token: your-plex-token-here
+
+  # For watchlist, use ONE of these options:
+  # Option 1: Use Plex account credentials
+  # username: your-plex-username
+  # password: your-plex-password
+
+  # Option 2: Use RSS feed URL (recommended)
+  watchlist_rss: https://rss.plex.tv/your-unique-watchlist-id
+
+radarr:
+  base_url: http://localhost:7878
+  api_key: your-radarr-api-key
+
+# Optional: Configure Sonarr for TV shows
+sonarr:
+  base_url: http://localhost:8989
+  api_key: your-sonarr-api-key
+
+# Optional: Configure webhooks for automated actions
+webhooks:
+  # Event triggered when an episode is marked as watched
+  # Commands are executed in order when this event occurs
+  after-watched:
+    - "download-next --count 2 --execute"  # Download the next 2 episodes
+    - "delete-watched --days 5 --execute"  # Delete episodes watched more than 5 days ago
+
+  # Event triggered when playback starts
+  on-play: []
+
+  # Event triggered when playback is paused
+  on-pause: []
+
+  # Event triggered when playback resumes after pause
+  on-resume: []
+
+  # Event triggered when playback stops before completion
+  on-stop: []
+
+  # Event triggered when a user rates media
+  on-rate: []
+
+  # Event triggered when new content is added to library
+  on-added: []
