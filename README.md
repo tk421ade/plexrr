@@ -14,9 +14,35 @@ A Python command-line tool to manage media across Plex, Radarr, and Sonarr.
 
 ## Installation
 
+### For Development
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+```
+
+### For Prod [coming soon]
 ```bash
 pip install plexrr
 ```
+
+### Bash Auto-Completion
+
+To enable tab completion in Bash:
+
+```bash
+# Generate and install the completion script
+plexrr completion
+
+# Or if you want to save it to a specific location
+plexrr completion --path /path/to/your/completion/script
+
+# Print the script to stdout (for manual installation)
+plexrr completion --print > ~/plexrr-completion.bash
+source ~/plexrr-completion.bash
+```
+
+You can add the source command to your `~/.bashrc` or `~/.bash_profile` to enable completion automatically when you start a new shell:
 
 ## Configuration
 
