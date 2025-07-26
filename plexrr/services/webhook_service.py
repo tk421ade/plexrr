@@ -25,7 +25,24 @@ def handle_webhook():
     if not event:
         return jsonify({"status": "error", "message": "Missing 'event' in webhook payload"}), 400
 
+    # Log basic event information
     logger.info(f"Received webhook for event: {event}")
+
+    # Log additional webhook details if available
+    media_type = payload.get('Metadata', {}).get('type')
+    media_title = payload.get('Metadata', {}).get('title')
+    user = payload.get('Account', {}).get('title')
+
+    log_details = []
+    if media_type:
+        log_details.append(f"type: {media_type}")
+    if media_title:
+        log_details.append(f"title: {media_title}")
+    if user:
+        log_details.append(f"user: {user}")
+
+    if log_details:
+        logger.info(f"Webhook details: {', '.join(log_details)}")
 
     # Map Plex event names to webhook config keys
     event_map = {
@@ -140,16 +157,41 @@ def execute_command(command_str: str, metadata: Dict) -> Dict:
         result["output"] = process.stdout
         result["error"] = process.stderr
 
+        # Log command output and results
         if not result["success"]:
-            logger.error(f"Command failed: {command_str}\nError: {result['error']}")
+            # Log error details
+            logger.error(f"Command failed: {command_str}")
+            logger.error(f"Exit code: {process.returncode}")
+            if result['error']:
+                _log_output("Error output", result['error'], logger.error)
         else:
+            # Log success and output
             logger.info(f"Command succeeded: {command_str}")
+
+            # Log stdout if available
+            if result['output'].strip():
+                _log_output("Command output", result['output'], logger.info)
 
     except Exception as e:
         logger.exception(f"Error executing command: {command_str}")
         result["error"] = str(e)
 
     return result
+
+def _log_output(prefix: str, text: str, log_func) -> None:
+    """Helper to format and log multi-line output
+
+    Args:
+        prefix: Prefix text to add before the output block
+        text: The text to log (can be multi-line)
+        log_func: The logging function to use (e.g., logger.info, logger.error)
+    """
+    if not text or not text.strip():
+        return
+
+    log_func(f"{prefix}:")
+    for line in text.strip().split('\n'):
+        log_func(f"  {line}")
 
 def _parse_command(command_str: str, metadata: Dict) -> List[str]:
     """Parse a command string into parts, substituting placeholders with values from metadata"""

@@ -23,6 +23,7 @@ def delete_watched_episodes(show_id, days, skip_pilots, confirm, execute, verbos
     Episodes watched more than 10 days ago will be processed by default (use --days to change).
     Use --skip-pilots to preserve the first episode (S01E01) of each series.
     Use --confirm with --execute for a confirmation prompt before each deletion.
+    Use --verbose to see detailed information, including shows with no eligible episodes.
     """
     try:
         # Configure logging based on verbose flag
@@ -41,18 +42,23 @@ def delete_watched_episodes(show_id, days, skip_pilots, confirm, execute, verbos
 
         # Find and optionally delete watched episodes
         click.echo("Searching for watched episodes...")
-        results = plex_service.delete_watched_episodes(show_id, confirm, days, skip_pilots, execute)
+        results = plex_service.delete_watched_episodes(show_id, confirm, days, skip_pilots, execute, verbose)
 
-        # Summary is already printed by the service function
-        action = "Deleted" if execute else "Would delete"
-        click.echo(f"\nOperation completed:")
-        click.echo(f"- {results['deleted']} episodes {action.lower()}")
-        click.echo(f"- Total size: {humanize.naturalsize(results['total_size'])}")
-        if results['skipped'] > 0:
-            click.echo(f"- {results['skipped']} episodes skipped")
+        # Show a summary only if there's something worth reporting
+        if results['deleted'] > 0 or results['skipped'] > 0:
+            action = "Deleted" if execute else "Would delete"
+            click.echo(f"\nOperation completed:")
+            click.echo(f"- {results['deleted']} episodes {action.lower()}")
+            click.echo(f"- Total size: {humanize.naturalsize(results['total_size'])}")
+            if results['skipped'] > 0:
+                click.echo(f"- {results['skipped']} episodes skipped")
 
-        if not execute:
-            click.echo("\nThis was a dry run. Use --execute to actually delete these episodes.")
+            if not execute and results['deleted'] > 0:
+                click.echo("\nThis was a dry run. Use --execute to actually delete these episodes.")
+        else:
+            click.echo("\nNo eligible episodes found to delete.")
+            if verbose:
+                click.echo("Try adjusting your criteria (--days, --skip-pilots) or check if episodes are marked as watched in Plex.")
 
         if verbose:
             logger.debug("Deletion process completed successfully")

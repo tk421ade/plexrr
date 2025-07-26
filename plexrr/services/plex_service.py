@@ -23,7 +23,7 @@ class PlexService:
         self.token = config['token']
         self.server = PlexServer(self.base_url, self.token)
 
-    def delete_watched_episodes(self, show_id: str = None, confirm: bool = False, days: int = 10, skip_pilots: bool = False, execute: bool = False) -> Dict[str, any]:
+    def delete_watched_episodes(self, show_id: str = None, confirm: bool = False, days: int = 10, skip_pilots: bool = False, execute: bool = False, verbose: bool = False) -> Dict[str, any]:
         """Find and optionally delete watched episodes for a specific show or all shows
 
         Args:
@@ -32,6 +32,7 @@ class PlexService:
             days: Only delete episodes watched more than X days ago (default: 10 days)
             skip_pilots: If True, skip pilot episodes (S01E01) when deleting
             execute: If True, actually delete the files. If False, just display what would be deleted
+            verbose: If True, show detailed information for all shows, including those with no eligible episodes
 
         Returns:
             Dict with results including counts and total size
@@ -81,9 +82,11 @@ class PlexService:
                         ]
 
                     if not watched_episodes:
-                        print(f"No eligible watched episodes found for '{plex_show.title}'")
+                        if verbose:
+                            print(f"No eligible watched episodes found for '{plex_show.title}'")
                         continue
 
+                    # Only show information for shows that have episodes to process
                     print(f"Found {len(watched_episodes)} watched episodes in '{plex_show.title}'")
 
                     for episode in watched_episodes:
@@ -102,9 +105,10 @@ class PlexService:
                         episode_info = f"{plex_show.title} - S{episode.seasonNumber:02d}E{episode.index:02d} - {episode.title}"
                         size_info = f" ({humanize.naturalsize(episode_size)})" if episode_size > 0 else ""
 
-                        # Display what would be deleted
+                        # Only display individual episode information if in verbose mode or when actually deleting
                         action = "Would delete" if not execute else "Deleting"
-                        print(f"{action}: {episode_info}{size_info}")
+                        if verbose or execute:
+                            print(f"{action}: {episode_info}{size_info}")
 
                         # Track the episode in our results
                         results['files'].append({
@@ -135,13 +139,14 @@ class PlexService:
                             # If not executing, just count as "would delete"
                             results['deleted'] += 1
 
-            # Print summary
-            action = "Deleted" if execute else "Would delete"
-            print(f"\nSummary:")
-            print(f"- {action}: {results['deleted']} episodes")
-            print(f"- Size: {humanize.naturalsize(results['total_size'])}")
-            if results['skipped'] > 0:
-                print(f"- Skipped: {results['skipped']} episodes")
+            # Print summary - only if we actually found something to delete
+            if results['deleted'] > 0 or results['skipped'] > 0 or verbose:
+                action = "Deleted" if execute else "Would delete"
+                print(f"\nSummary:")
+                print(f"- {action}: {results['deleted']} episodes")
+                print(f"- Size: {humanize.naturalsize(results['total_size'])}")
+                if results['skipped'] > 0:
+                    print(f"- Skipped: {results['skipped']} episodes")
 
             return results
 
