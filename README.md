@@ -199,19 +199,39 @@ If webhooks are not working:
 
 1. Run `plexrr config validate --verbose` to check that your webhook configuration is being loaded correctly
 2. Verify the webhook server is running with `plexrr webhook status`
-3. Check the webhook server logs:
+3. Enable debug logging to see detailed information including request payloads:
+   ```bash
+   # Run in foreground with debug logging to a file
+   plexrr webhook start --foreground --debug --log-file webhook.log
+
+   # Or to see everything in the terminal:
+   plexrr webhook start --foreground --debug
+   ```
+4. Check the webhook server logs:
    - When running in foreground mode: output appears in terminal
    - When running as systemd service: `sudo journalctl -u plexrr-webhook@<username>.service`
-4. Ensure your server is accessible from the internet (or from your Plex server)
-5. Verify port 9876 is open in your firewall
-6. Confirm you have a Plex Pass subscription (required for webhooks)
-7. Try testing the webhook manually:
+   - When using log file: `tail -f webhook.log`
+5. Ensure your server is accessible from the internet (or from your Plex server)
+6. Verify port 9876 is open in your firewall
+7. Confirm you have a Plex Pass subscription (required for webhooks)
+8. Try testing the webhook manually with various content types:
 
 ```bash
+# Test with JSON content type
 curl -X POST -H "Content-Type: application/json" \
   -d '{"event":"media.scrobble", "Account":{"title":"test"}, "Metadata":{"type":"episode"}}' \
   http://localhost:9876/webhook
+
+# Test with form-encoded data (how Plex sometimes sends it)
+curl -X POST -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode 'payload={"event":"media.scrobble", "Account":{"title":"test"}, "Metadata":{"type":"episode"}}' \
+  http://localhost:9876/webhook
 ```
+
+9. Common error codes:
+   - `415 Unsupported Media Type`: The webhook server couldn't parse your request. Enable debug logging to see the actual request content.
+   - `400 Bad Request`: The webhook payload is missing required fields.
+   - `500 Internal Server Error`: An exception occurred while processing the webhook. Check logs for details.
 
 ## Usage
 
@@ -295,11 +315,13 @@ plexrr download-next --show-id 123     # Only suggest for a specific show
 plexrr download-next --confirm --quality-profile 1  # Actually request downloads in Sonarr
 
 # Webhook server for automating actions from Plex events
-plexrr webhook start                   # Start the webhook server as a daemon
-plexrr webhook start --foreground      # Start the webhook server in the foreground
-plexrr webhook start --port 9876       # Specify a custom port (default: 9876)
-plexrr webhook stop                    # Stop the webhook server
-plexrr webhook status                  # Check if the webhook server is running
+plexrr webhook start                        # Start the webhook server as a daemon
+plexrr webhook start --foreground           # Start the webhook server in the foreground
+plexrr webhook start --port 9876            # Specify a custom port (default: 9876)
+plexrr webhook start --debug                # Enable debug logging with full request/response details
+plexrr webhook start --log-file /path/to/log # Log to file instead of console
+plexrr webhook stop                         # Stop the webhook server
+plexrr webhook status                       # Check if the webhook server is running
 ```
 
 ## License

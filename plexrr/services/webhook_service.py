@@ -13,13 +13,83 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Add before/after request handlers to log everything
+@app.before_request
+def log_request_info():
+    """Log request data for debugging"""
+    logger.debug(f"Request Method: {request.method}")
+    logger.debug(f"Request URL: {request.url}")
+    logger.debug(f"Request Headers: {dict(request.headers)}")
+
+    # Only log content for non-GET requests
+    if request.method != 'GET':
+        content_type = request.headers.get('Content-Type', '')
+        logger.debug(f"Content-Type: {content_type}")
+
+        # Log the raw data
+        if request.data:
+            try:
+                logger.debug(f"Request Raw Data: {request.data.decode('utf-8')}")
+            except UnicodeDecodeError:
+                logger.debug(f"Request Raw Data: [binary data, size: {len(request.data)} bytes]")
+
 @app.route('/webhook', methods=['POST'])
 def handle_webhook():
     """Handle incoming webhook from Plex"""
-    if not request.json:
-        return jsonify({"status": "error", "message": "Invalid request, no JSON data"}), 400
+    # Log all raw incoming data for debugging
+    content_type = request.headers.get('Content-Type', '')
+    logger.debug(f"Webhook received with Content-Type: {content_type}")
 
-    payload = request.json
+    # Parse the payload based on content type
+    payload = None
+    error_msg = None
+
+    try:
+        if 'application/json' in content_type:
+            payload = request.json
+        elif 'application/x-www-form-urlencoded' in content_type:
+            # Plex sometimes sends data as form-encoded with a 'payload' parameter
+            form_data = request.form.to_dict()
+            if 'payload' in form_data:
+                payload = json.loads(form_data['payload'])
+                logger.debug(f"Extracted JSON from form data: {payload}")
+            else:
+                error_msg = "Form data received but no 'payload' parameter found"
+                logger.error(f"Form data keys: {list(form_data.keys())}")
+        elif 'multipart/form-data' in content_type:
+            # Handle multipart form data
+            form_data = request.form.to_dict()
+            if 'payload' in form_data:
+                payload = json.loads(form_data['payload'])
+                logger.debug(f"Extracted JSON from multipart form: {payload}")
+            else:
+                error_msg = "Multipart form data received but no 'payload' parameter found"
+                logger.error(f"Form data keys: {list(form_data.keys())}")
+        else:
+            # Try to parse raw data as JSON as a fallback
+            try:
+                raw_data = request.get_data(as_text=True)
+                if raw_data:
+                    payload = json.loads(raw_data)
+                    logger.debug(f"Parsed raw data as JSON: {payload}")
+                else:
+                    error_msg = f"Unsupported Content-Type: {content_type} and no raw data"
+            except json.JSONDecodeError as e:
+                error_msg = f"Failed to parse request data as JSON: {str(e)}"
+                logger.error(f"Raw data: {request.get_data(as_text=True)[:500]}...")
+    except Exception as e:
+        error_msg = f"Error processing webhook request: {str(e)}"
+        logger.exception("Webhook processing error")
+
+    # Handle case where we couldn't get a payload
+    if not payload:
+        logger.error(f"Invalid webhook request: {error_msg}")
+        return jsonify({"status": "error", "message": error_msg or "Invalid request format"}), 415
+
+    # Log the full payload for debugging
+    logger.debug(f"Webhook payload: {json.dumps(payload, indent=2)}")
+
+    # Extract the event
     event = payload.get('event')
 
     if not event:
@@ -213,13 +283,34 @@ def _parse_command(command_str: str, metadata: Dict) -> List[str]:
 
     return parts
 
-def run_webhook_server(host: str = '0.0.0.0', port: int = 9876, debug: bool = False):
+def run_webhook_server(host: str = '0.0.0.0', port: int = 9876, debug: bool = False, log_file: str = None):
     """Run the webhook server"""
     # Set up logging
-    if debug:
-        logging.basicConfig(level=logging.DEBUG)
+    log_level = logging.DEBUG if debug else logging.INFO
+
+    if log_file:
+        # Configure logging to file with rotation
+        from logging.handlers import RotatingFileHandler
+
+        # Create handler with rotation (max 5MB, keep 5 backup files)
+        handler = RotatingFileHandler(
+            log_file, maxBytes=5*1024*1024, backupCount=5
+        )
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        handler.setFormatter(formatter)
+        handler.setLevel(log_level)
+
+        # Add handler to root logger and this module's logger
+        root_logger = logging.getLogger()
+        root_logger.setLevel(log_level)
+        root_logger.addHandler(handler)
+
+        logger.info(f"Logging to file: {log_file}")
     else:
-        logging.basicConfig(level=logging.INFO)
+        # Basic console logging
+        logging.basicConfig(level=log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     logger.info(f"Starting webhook server on {host}:{port}")
     app.run(host=host, port=port, debug=debug)
