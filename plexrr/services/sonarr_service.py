@@ -359,6 +359,7 @@ class SonarrService:
                 (episode.get('monitored', False) and episode.get('airDateUtc') and 
                  episode.get('episodeFileId') is not None)):
                 print(f"Episode S{season_number:02d}E{episode_number:02d} exists in Sonarr")
+                print(f"Search initiated for S{season_number:02d}E{episode_number:02d} without monitoring")
                 return True
         return False
 

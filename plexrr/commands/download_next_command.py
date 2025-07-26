@@ -24,6 +24,9 @@ def download_next_episodes(show_id, count, quality_profile, confirm, verbose):
     display what will be downloaded by default, and only proceed to request the
     downloads to Sonarr when --confirm flag is used along with a --quality-profile.
 
+    Episodes are searched in Sonarr without enabling monitoring, which means Sonarr
+    will look for the episode but not automatically monitor it for future searches.
+
     If a show ID is provided, only that specific show will be analyzed.
     """
     try:
@@ -141,6 +144,7 @@ def download_next_episodes(show_id, count, quality_profile, confirm, verbose):
                         else:
                             # Request the episode download - the method will automatically try
                             # the next season's first episode if current season is finished
+                            # Episodes are searched without enabling monitoring
                             success = sonarr_service.request_episode_download(
                                 series_id, 
                                 episode['season'], 
@@ -148,7 +152,7 @@ def download_next_episodes(show_id, count, quality_profile, confirm, verbose):
                             )
 
                             if success:
-                                click.echo(f"    Download requested successfully")
+                                click.echo(f"    Download search requested successfully (without monitoring)")
                                 download_requested += 1
                             else:
                                 # Try to get the first episode of the next season if this failed
